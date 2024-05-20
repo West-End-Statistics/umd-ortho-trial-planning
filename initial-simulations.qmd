@@ -1,0 +1,277 @@
+---
+title: "Initial Simulations for Fracture Trial"
+format: html
+code-fold: true
+
+---
+
+
+```{r}
+library(dplyr)
+library(BuyseTest)
+
+prob2odds <- function(p, logodds = TRUE) {
+  out <- p / (1 - p)
+  if (logodds) {
+    log(out)
+  } else {
+    out
+  }
+}
+
+odds2prob <- function(x) {
+  x / (1 + x)
+}
+
+logodds2prob <- function(x) {
+  x <- exp(x)
+  odds2prob(x)
+}
+```
+
+## Introduction
+
+
+## Data Simulation
+
+### Outcomes
+
+1. All Cause Mortality (Probability of Surviving)
+
+```{r}
+placebo_alive_rate <- .85
+treat_alive_rate <- .9
+placebo_log_odds <- prob2odds(placebo_alive_rate, logodds = TRUE)
+treat_log_odds <- prob2odds(treat_alive_rate, logodds = TRUE)
+```
+
+2.  Days at home within 4 months
+
+```{r}
+
+max_days <- ceiling(4 * 30.25)
+min_days <- 1
+
+placebo_d_at_home <- 67
+treatment_d_at_home <- 78
+
+d_at_home_overall_sd <- 20
+```
+
+
+
+#### Ambulation at 4 months
+
+```{r}
+
+get_amb_status <- function(x, arm = c("placebo", "active")) {
+  treatment_cutoffs <- qnorm(
+    cumsum(c(.05, .25, .41))
+  )
+  placebo_cutoffs <- qnorm(
+    cumsum(c(.07, .37, .34))
+  )
+  if (arm == "placebo") {
+    cut_to_use <- placebo_cutoffs
+  } else {
+    cut_to_use <- treatment_cutoffs
+  }
+  cut(x,
+    c(-Inf, cut_to_use, Inf),
+    labels = c(
+      "unable to walk",
+      "walk with human assistance",
+      "walk with aid",
+      "walk without assistance"
+    )
+  )
+}
+
+
+```
+
+### Correlate Outcomes and Simulate
+
+```{r}
+simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
+  arm <- match.arg(arm)
+
+  # set up covariance matrix
+  # .2 means that there is some variance in rates, but it does not effect
+  sds <- matrix(c(.3, 20, 1), ncol = 1)
+  covar <- sds %*% t(sds)
+  non_diag_sel <- lower.tri(covar) | upper.tri(covar)
+  covar[non_diag_sel] <- covar[non_diag_sel] * outcome_correlation
+  if (arm == "placebo") {
+    log_odds_surv <- prob2odds(.85)
+    d_at_home <- 67
+  } else {
+    log_odds_surv <- prob2odds(.9)
+    d_at_home <- 78
+  }
+
+  underlying_data <- mvtnorm::rmvnorm(
+    n = n,
+    c(
+      log_odds_surv,
+      d_at_home,
+      0
+    ),
+    covar
+  )
+
+  out <- data.frame(
+    died = rbinom(n = n, size = 1, prob = 1 - logodds2prob(underlying_data[, 1])),
+    days_at_home = pmax(pmin(underlying_data[, 2], 121), 1),
+    ambulation_status = get_amb_status(underlying_data[, 3], arm)
+  )
+
+  out$amb_status_numeric <- as.numeric(out$ambulation_status)
+  out
+}
+
+simulate_trial <- function(n_per_arm, outcome_correlation = 0) {
+  out <- dplyr::bind_rows(
+    placebo = simulate_data(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
+    active = simulate_data(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
+    .id = "arm"
+  )
+
+  out$arm <- factor(out$arm, c("placebo", "active"))
+  out
+}
+
+```
+
+
+### Example Data Observed Properties
+
+```{r}
+set.seed(20240515)
+trial_no_corr <- simulate_trial(10000, outcome_correlation = 0)
+trial_hi_corr <- simulate_trial(10000, outcome_correlation = .9)
+d_no_corr <- simulate_data(10000, outcome_correlation = 0)
+d_hi_corr <- simulate_data(10000, outcome_correlation = .9)
+
+make_summary_tbl <- function(d) {
+  gtsummary::tbl_summary(d,
+    statistic = list(
+      gtsummary::all_continuous() ~ "{mean} ({sd})",
+      gtsummary::all_categorical() ~ "{n} ({p}%)"
+    ),
+    by = "arm",
+    include = -amb_status_numeric
+  ) |> gtsummary::add_stat_label()
+}
+
+gtsummary::tbl_merge(
+  list(
+    make_summary_tbl(trial_no_corr),
+    make_summary_tbl(trial_hi_corr)
+  ),
+  tab_spanner = c("No Correlation", "High Correlation")
+)
+
+
+d_no_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
+  cor(method = "spearman")
+
+d_hi_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
+  cor(method = "spearman")
+
+
+```
+
+### Example Data
+
+```{r}
+set.seed(2024051)
+no_corr_simple_trial <- simulate_trial(n = 75, outcome_correlation = 0)
+make_summary_tbl(no_corr_simple_trial)
+bt_out <- BuyseTest(
+  arm ~ bin(died, operator = "<0") +
+    cont(amb_status_numeric, threshold = 1) +
+    cont(days_at_home, threshold = 2),
+  method.inference = "u-statistic",
+  trace = 0,
+  data = no_corr_simple_trial
+)
+summary(bt_out, statistic = "winRatio")
+```
+
+
+### Multiple Simulations for Power
+
+  ```{r}
+num_sims <- 1000
+num_pats <- 75
+
+no_correlation_pvals <- sapply(1:num_sims, function(.i) {
+  d <- simulate_trial(num_pats, 0)
+
+  # threshold is difference is greater than or equal to
+  bt_out <- BuyseTest(
+    arm ~ bin(died, operator = "<0") +
+      cont(amb_status_numeric, threshold = 1) +
+      cont(days_at_home, threshold = 1),
+    method.inference = "u-statistic",
+    trace = 0,
+    data = d
+  )
+  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+
+  winratio_out |> subset(term == "days_at_home_t1", select = p.value, drop = TRUE)
+})
+
+mid_correlation_pvals <- sapply(1:num_sims, function(.i) {
+  d <- simulate_trial(num_pats, .5)
+
+  # threshold is difference is greater than or equal to
+  bt_out <- BuyseTest(
+    arm ~ bin(died, operator = "<0") +
+      cont(amb_status_numeric, threshold = 1) +
+      cont(days_at_home, threshold = 1),
+    method.inference = "u-statistic",
+    trace = 0,
+    data = d
+  )
+  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+
+  winratio_out |> subset(term == "days_at_home_t1", select = p.value, drop = TRUE)
+})
+
+
+high_correlation_pvals <- sapply(1:num_sims, function(.i) {
+  d <- simulate_trial(num_pats, .9)
+
+  # threshold is difference is greater than or equal to
+  bt_out <- BuyseTest(
+    arm ~ bin(died, operator = "<0") +
+      cont(amb_status_numeric, threshold = 1) +
+      cont(days_at_home, threshold = 1),
+    method.inference = "u-statistic",
+    trace = 0,
+    data = d
+  )
+  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+
+  winratio_out |> subset(term == "days_at_home_t1", select = p.value, drop = TRUE)
+})
+
+
+mean(no_correlation_pvals < .05)
+mean(mid_correlation_pvals < .05)
+mean(high_correlation_pvals < .05)
+
+
+
+
+
+
+# died_out <- glm(died ~ arm, data = d, family = "binomial") |> broom::tidy()
+
+
+```
+
+
+
