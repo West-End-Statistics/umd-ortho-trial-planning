@@ -71,5 +71,5 @@ RUN install2.r --error \
     && strip /usr/local/lib/R/site-library/*/libs/*.so
 
 # Other packages to install - move away from dev when ready
-# RUN install2.r --error \
-#     bayesDP furrr memoise plotly
+RUN install2.r --error \
+    BuyseTest

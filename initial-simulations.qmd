@@ -5,9 +5,9 @@ code-fold: true
 
 ---
 
-
 ```{r}
 library(dplyr)
+library(ggplot2)
 library(BuyseTest)
 
 prob2odds <- function(p, logodds = TRUE) {
@@ -31,12 +31,16 @@ logodds2prob <- function(x) {
 
 ## Introduction
 
+This document summarizes the power for detecting the effect of an intervention on post fracture recovery. The first round of simulations looks at how much correlation between different endpoint may alter the power of a win ratio based test. It additionally explores the difference in power from looking at the individual outcomes vs what is possible with the win ratio test.
+
 
 ## Data Simulation
 
 ### Outcomes
 
-1. All Cause Mortality (Probability of Surviving)
+1. All Cause Mortality
+
+Mortality is modeled as a binary variable, with 15% in the placebo group and 10% in the treatment group. 
 
 ```{r}
 placebo_alive_rate <- .85
@@ -46,6 +50,8 @@ treat_log_odds <- prob2odds(treat_alive_rate, logodds = TRUE)
 ```
 
 2.  Days at home within 4 months
+
+Days at home is modeled as a normal variable with a minimum of 1 day and maximum of 121 (approximately 4 months). A standard deviation of 20 is used and an average of 67 is used for placebo/78 for the treament arm.
 
 ```{r}
 
@@ -58,12 +64,13 @@ treatment_d_at_home <- 78
 d_at_home_overall_sd <- 20
 ```
 
+3. Ambulation at 4 months
 
+Ambulation at 4 months is modelled as a normal variable that is then broken up into four different categories. The different treatment arms use differnent cutoffs based on the predefined percentages.
 
-#### Ambulation at 4 months
+The cutoffs differ depending on if the subject is treated with placebo or active treatment. For example, the graph below shows how a normal variable is split into the appropriate categories. The re is a little variation because of random sampling, but you can see that the walk with human assistance category is visibly larger in the placebo group.
 
 ```{r}
-
 get_amb_status <- function(x, arm = c("placebo", "active")) {
   treatment_cutoffs <- qnorm(
     cumsum(c(.05, .25, .41))
@@ -86,18 +93,40 @@ get_amb_status <- function(x, arm = c("placebo", "active")) {
     )
   )
 }
+```
 
+
+```{r}
+
+latent_variable <- rnorm(10000)
+placebo_status <- get_amb_status(latent_variable, arm = "placebo")
+active_status <- get_amb_status(latent_variable, arm = "active")
+
+rbind(
+  data.frame(latent_variable, amb_4_months = placebo_status, arm = "placebo"),
+  data.frame(latent_variable, amb_4_months = active_status, arm = "active")
+) |>
+  ggplot(aes(x = latent_variable, fill = amb_4_months)) +
+  geom_histogram(binwidth = .03) +
+  facet_grid(arm ~ .) +
+  labs(x = "")
 
 ```
 
+
 ### Correlate Outcomes and Simulate
+
+A transformed multivariate normal distribution was used to create correlation among the three different outcome. However, since mortality is a binary outcome, the result of the normal draws was used as a log odds estimate for the true rate. 
+
 
 ```{r}
 simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
   arm <- match.arg(arm)
 
   # set up covariance matrix
-  # .2 means that there is some variance in rates, but it does not effect
+  # .3 means that there is some variance in rates, but it does not effect
+  # the average rate too much. Higher variances drive the base rate up - probably because
+  #
   sds <- matrix(c(.3, 20, 1), ncol = 1)
   covar <- sds %*% t(sds)
   non_diag_sel <- lower.tri(covar) | upper.tri(covar)
@@ -130,6 +159,7 @@ simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation =
   out
 }
 
+# The following function creates a full trial with both arms
 simulate_trial <- function(n_per_arm, outcome_correlation = 0) {
   out <- dplyr::bind_rows(
     placebo = simulate_data(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
@@ -145,6 +175,9 @@ simulate_trial <- function(n_per_arm, outcome_correlation = 0) {
 
 
 ### Example Data Observed Properties
+
+
+The table below shows that the observed outcomes in both an uncorrelated and highly correlated example data set have similar properties and are in line with the prespecified definitions
 
 ```{r}
 set.seed(20240515)
@@ -171,18 +204,26 @@ gtsummary::tbl_merge(
   ),
   tab_spanner = c("No Correlation", "High Correlation")
 )
+```
 
 
+The following shows the correlation matrix when no correlation is present.
+
+```{r}
 d_no_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
   cor(method = "spearman")
+```
 
+This contrasts with the high correlation example where the non-diagonal entries of the correlation matrix are not equal to 0. The correlation between a binary and continous variable is harder to capture so is much lower than the target (.9).
+
+```{r}
 d_hi_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
   cor(method = "spearman")
-
-
 ```
 
 ### Example Data
+
+The output below shows a hypothetical trial with 75 subjects per arm:
 
 ```{r}
 set.seed(2024051)
@@ -200,78 +241,120 @@ summary(bt_out, statistic = "winRatio")
 ```
 
 
-### Multiple Simulations for Power
+The result above shows that there is an overall improvement in the active arm. The last p.value for days at home (.001) is the overall p.value.
 
-  ```{r}
-num_sims <- 1000
-num_pats <- 75
+The following code shows how each of the three outcomes would be evaluated individually. 
 
-no_correlation_pvals <- sapply(1:num_sims, function(.i) {
-  d <- simulate_trial(num_pats, 0)
+1. Mortality (Logistic Regression)
 
-  # threshold is difference is greater than or equal to
-  bt_out <- BuyseTest(
-    arm ~ bin(died, operator = "<0") +
-      cont(amb_status_numeric, threshold = 1) +
-      cont(days_at_home, threshold = 1),
-    method.inference = "u-statistic",
-    trace = 0,
-    data = d
-  )
-  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+```{r}
+glm(died ~ arm, data = no_corr_simple_trial, family = "binomial") |>
+  broom::tidy() |>
+  subset(term == "armactive")
+```
 
-  winratio_out |> subset(term == "days_at_home_t1", select = p.value, drop = TRUE)
-})
+2. Ambulation Status (Ordinal Regression)
 
-mid_correlation_pvals <- sapply(1:num_sims, function(.i) {
-  d <- simulate_trial(num_pats, .5)
+```{r}
+MASS::polr(ambulation_status ~ arm, data = no_corr_simple_trial, Hess = TRUE) |>
+  broom::tidy(p.values = TRUE) |>
+  subset(term == "armactive")
+```
 
-  # threshold is difference is greater than or equal to
-  bt_out <- BuyseTest(
-    arm ~ bin(died, operator = "<0") +
-      cont(amb_status_numeric, threshold = 1) +
-      cont(days_at_home, threshold = 1),
-    method.inference = "u-statistic",
-    trace = 0,
-    data = d
-  )
-  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
-
-  winratio_out |> subset(term == "days_at_home_t1", select = p.value, drop = TRUE)
-})
-
-
-high_correlation_pvals <- sapply(1:num_sims, function(.i) {
-  d <- simulate_trial(num_pats, .9)
-
-  # threshold is difference is greater than or equal to
-  bt_out <- BuyseTest(
-    arm ~ bin(died, operator = "<0") +
-      cont(amb_status_numeric, threshold = 1) +
-      cont(days_at_home, threshold = 1),
-    method.inference = "u-statistic",
-    trace = 0,
-    data = d
-  )
-  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
-
-  winratio_out |> subset(term == "days_at_home_t1", select = p.value, drop = TRUE)
-})
-
-
-mean(no_correlation_pvals < .05)
-mean(mid_correlation_pvals < .05)
-mean(high_correlation_pvals < .05)
-
-
-
-
-
-
-# died_out <- glm(died ~ arm, data = d, family = "binomial") |> broom::tidy()
-
-
+3. Days at home (t test)
+```{r}
+lm(days_at_home ~ arm, data = no_corr_simple_trial) |>
+  broom::tidy() |>
+  subset(term == "armactive")
 ```
 
 
 
+## Evaluating Power
+
+Power will be evaluated for a trial with 75 subjects per arm, and correlations between none, medium (.5) and high (.9). Power was calculated for the winratio test and the individual components with alpha = .05 and 1000 simulations.
+
+
+  ```{r}
+evaluate_dataset <- function(d, alpha = .05) {
+  bt_out <- BuyseTest(
+    arm ~ bin(died, operator = "<0") +
+      cont(amb_status_numeric, threshold = 1) +
+      cont(days_at_home, threshold = 1),
+    method.inference = "u-statistic",
+    trace = 0,
+    data = d
+  )
+  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+
+
+  winratio_summary <- winratio_out |>
+    subset(term == "days_at_home_t1")
+
+  winratio_win <- winratio_summary$estimate > 1 && winratio_summary$p.value < alpha
+
+  death_summary <- glm(died ~ arm, data = no_corr_simple_trial, family = "binomial") |>
+    broom::tidy() |>
+    subset(term == "armactive")
+
+  death_win <- death_summary$estimate < 0 && death_summary$p.value < alpha
+
+  amb_status_summary <- MASS::polr(ambulation_status ~ arm,
+    data = no_corr_simple_trial,
+    Hess = TRUE
+  ) |>
+    broom::tidy(p.values = TRUE) |>
+    subset(term == "armactive")
+  amb_status_win <- amb_status_summary$estimate > 0 && amb_status_summary$p.value < alpha
+
+  days_summary <- lm(days_at_home ~ arm, data = no_corr_simple_trial) |>
+    broom::tidy() |>
+    subset(term == "armactive")
+
+  days_win <- days_summary$estimate > 0 && days_summary$p.value < alpha
+  data.frame(
+    winratio = winratio_win,
+    death = death_win,
+    amb_status = amb_status_win,
+    days = days_win
+  )
+}
+```
+
+
+```{r}
+num_sims <- 1000
+num_pats <- 75
+
+
+params <- tidyr::crossing(
+  sim_num = 1:num_sims,
+  correlation = c(0, .5, .9)
+)
+```
+
+```{r}
+
+sim_results <- purrr::map(params$correlation, function(.corr) {
+  d <- simulate_trial(num_pats, .corr)
+  evaluate_dataset(d)
+}) |> purrr::list_rbind()
+
+sim_results <- cbind(params, sim_results)
+```
+
+
+The final power for each outcome and correlation structure is shown below:
+
+```{r}
+sim_results |>
+  group_by(correlation) |>
+  summarise(across(winratio:days, mean))
+```
+
+
+
+
+## Limitations
+
+While correlation is modeled between outcomes, the specific relationships have not been taken into account. For example, if a subject dies on day 30, they can at most have 30 days at home. The specific causal paths between outcomes has also not been taken into account (non ambulation can raise likelihood of death).
