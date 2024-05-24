@@ -1,8 +1,9 @@
 ---
 title: "Initial Simulations for Fracture Trial"
-format: html
+format: 
+  html:
+    embed-resources: true
 code-fold: true
-
 ---
 
 ```{r}
@@ -33,14 +34,13 @@ logodds2prob <- function(x) {
 
 This document summarizes the power for detecting the effect of an intervention on post fracture recovery. The first round of simulations looks at how much correlation between different endpoint may alter the power of a win ratio based test. It additionally explores the difference in power from looking at the individual outcomes vs what is possible with the win ratio test.
 
-
 ## Data Simulation
 
 ### Outcomes
 
-1. All Cause Mortality
+1.  All Cause Mortality
 
-Mortality is modeled as a binary variable, with 15% in the placebo group and 10% in the treatment group. 
+Mortality is modeled as a binary variable, with 15% in the placebo group and 10% in the treatment group.
 
 ```{r}
 placebo_alive_rate <- .85
@@ -51,7 +51,7 @@ treat_log_odds <- prob2odds(treat_alive_rate, logodds = TRUE)
 
 2.  Days at home within 4 months
 
-Days at home is modeled as a normal variable with a minimum of 1 day and maximum of 121 (approximately 4 months). A standard deviation of 20 is used and an average of 67 is used for placebo/78 for the treament arm.
+Days at home is modeled as a normal variable with a minimum of 1 day and maximum of 121 (approximately 4 months). A standard deviation of 20 is used and an average of 67 is used for placebo/78 for the treatment arm.
 
 ```{r}
 
@@ -64,9 +64,9 @@ treatment_d_at_home <- 78
 d_at_home_overall_sd <- 20
 ```
 
-3. Ambulation at 4 months
+3.  Ambulation at 4 months
 
-Ambulation at 4 months is modelled as a normal variable that is then broken up into four different categories. The different treatment arms use differnent cutoffs based on the predefined percentages.
+Ambulation at 4 months is modeled as a normal variable that is then broken up into four different categories. The different treatment arms use different cutoffs based on the predefined percentages.
 
 The cutoffs differ depending on if the subject is treated with placebo or active treatment. For example, the graph below shows how a normal variable is split into the appropriate categories. The re is a little variation because of random sampling, but you can see that the walk with human assistance category is visibly larger in the placebo group.
 
@@ -95,7 +95,6 @@ get_amb_status <- function(x, arm = c("placebo", "active")) {
 }
 ```
 
-
 ```{r}
 
 latent_variable <- rnorm(10000)
@@ -113,11 +112,9 @@ rbind(
 
 ```
 
-
 ### Correlate Outcomes and Simulate
 
-A transformed multivariate normal distribution was used to create correlation among the three different outcome. However, since mortality is a binary outcome, the result of the normal draws was used as a log odds estimate for the true rate. 
-
+A transformed multivariate normal distribution was used to create correlation among the three different outcome. However, since mortality is a binary outcome, the result of the normal draws was used as a log odds estimate for the true rate.
 
 ```{r}
 simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
@@ -173,9 +170,7 @@ simulate_trial <- function(n_per_arm, outcome_correlation = 0) {
 
 ```
 
-
 ### Example Data Observed Properties
-
 
 The table below shows that the observed outcomes in both an uncorrelated and highly correlated example data set have similar properties and are in line with the prespecified definitions
 
@@ -206,7 +201,6 @@ gtsummary::tbl_merge(
 )
 ```
 
-
 The following shows the correlation matrix when no correlation is present.
 
 ```{r}
@@ -214,7 +208,7 @@ d_no_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
   cor(method = "spearman")
 ```
 
-This contrasts with the high correlation example where the non-diagonal entries of the correlation matrix are not equal to 0. The correlation between a binary and continous variable is harder to capture so is much lower than the target (.9).
+This contrasts with the high correlation example where the non-diagonal entries of the correlation matrix are not equal to 0. The correlation between a binary and continuous variable is harder to capture so is much lower than the target (.9).
 
 ```{r}
 d_hi_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
@@ -240,12 +234,11 @@ bt_out <- BuyseTest(
 summary(bt_out, statistic = "winRatio")
 ```
 
-
 The result above shows that there is an overall improvement in the active arm. The last p.value for days at home (.001) is the overall p.value.
 
-The following code shows how each of the three outcomes would be evaluated individually. 
+The following code shows how each of the three outcomes would be evaluated individually.
 
-1. Mortality (Logistic Regression)
+1.  Mortality (Logistic Regression)
 
 ```{r}
 glm(died ~ arm, data = no_corr_simple_trial, family = "binomial") |>
@@ -253,7 +246,7 @@ glm(died ~ arm, data = no_corr_simple_trial, family = "binomial") |>
   subset(term == "armactive")
 ```
 
-2. Ambulation Status (Ordinal Regression)
+2.  Ambulation Status (Ordinal Regression)
 
 ```{r}
 MASS::polr(ambulation_status ~ arm, data = no_corr_simple_trial, Hess = TRUE) |>
@@ -261,66 +254,63 @@ MASS::polr(ambulation_status ~ arm, data = no_corr_simple_trial, Hess = TRUE) |>
   subset(term == "armactive")
 ```
 
-3. Days at home (t test)
+3.  Days at home (t test)
+
 ```{r}
 lm(days_at_home ~ arm, data = no_corr_simple_trial) |>
   broom::tidy() |>
   subset(term == "armactive")
 ```
 
-
-
 ## Evaluating Power
 
 Power will be evaluated for a trial with 75 subjects per arm, and correlations between none, medium (.5) and high (.9). Power was calculated for the winratio test and the individual components with alpha = .05 and 1000 simulations.
 
-
-  ```{r}
+```{r}
 evaluate_dataset <- function(d, alpha = .05) {
-  bt_out <- BuyseTest(
-    arm ~ bin(died, operator = "<0") +
-      cont(amb_status_numeric, threshold = 1) +
-      cont(days_at_home, threshold = 1),
-    method.inference = "u-statistic",
-    trace = 0,
-    data = d
-  )
-  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+bt_out <- BuyseTest(
+  arm ~ bin(died, operator = "<0") +
+    cont(amb_status_numeric, threshold = 1) +
+    cont(days_at_home, threshold = 1),
+  method.inference = "u-statistic",
+  trace = 0,
+  data = d
+)
+winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
 
 
-  winratio_summary <- winratio_out |>
-    subset(term == "days_at_home_t1")
+winratio_summary <- winratio_out |>
+  subset(term == "days_at_home_t1")
 
-  winratio_win <- winratio_summary$estimate > 1 && winratio_summary$p.value < alpha
+winratio_win <- winratio_summary$estimate > 1 && winratio_summary$p.value < alpha
 
-  death_summary <- glm(died ~ arm, data = no_corr_simple_trial, family = "binomial") |>
-    broom::tidy() |>
-    subset(term == "armactive")
+death_summary <- glm(died ~ arm, data = d, family = "binomial") |>
+  broom::tidy() |>
+  subset(term == "armactive")
 
-  death_win <- death_summary$estimate < 0 && death_summary$p.value < alpha
+death_win <- death_summary$estimate < 0 && death_summary$p.value < alpha
 
-  amb_status_summary <- MASS::polr(ambulation_status ~ arm,
-    data = no_corr_simple_trial,
-    Hess = TRUE
-  ) |>
-    broom::tidy(p.values = TRUE) |>
-    subset(term == "armactive")
-  amb_status_win <- amb_status_summary$estimate > 0 && amb_status_summary$p.value < alpha
+amb_status_summary <- MASS::polr(ambulation_status ~ arm,
+  data = d,
+  Hess = TRUE
+) |>
+  broom::tidy(p.values = TRUE) |>
+  subset(term == "armactive")
+amb_status_win <- amb_status_summary$estimate > 0 && amb_status_summary$p.value < alpha
 
-  days_summary <- lm(days_at_home ~ arm, data = no_corr_simple_trial) |>
-    broom::tidy() |>
-    subset(term == "armactive")
+days_summary <- lm(days_at_home ~ arm, data = d) |>
+  broom::tidy() |>
+  subset(term == "armactive")
 
-  days_win <- days_summary$estimate > 0 && days_summary$p.value < alpha
-  data.frame(
-    winratio = winratio_win,
-    death = death_win,
-    amb_status = amb_status_win,
-    days = days_win
-  )
+days_win <- days_summary$estimate > 0 && days_summary$p.value < alpha
+data.frame(
+  winratio = winratio_win,
+  death = death_win,
+  amb_status = amb_status_win,
+  days = days_win
+)
 }
 ```
-
 
 ```{r}
 num_sims <- 1000
@@ -334,7 +324,8 @@ params <- tidyr::crossing(
 ```
 
 ```{r}
-
+#| cache: true
+set.seed(20240512)
 sim_results <- purrr::map(params$correlation, function(.corr) {
   d <- simulate_trial(num_pats, .corr)
   evaluate_dataset(d)
@@ -342,7 +333,6 @@ sim_results <- purrr::map(params$correlation, function(.corr) {
 
 sim_results <- cbind(params, sim_results)
 ```
-
 
 The final power for each outcome and correlation structure is shown below:
 
@@ -352,8 +342,21 @@ sim_results |>
   summarise(across(winratio:days, mean))
 ```
 
+```{r}
+# Monte Carlo Standard error (TODO)
+# boot::boot(sim_results, function(data, inds) {
+#
+#  colMeans()
+# })
+```
 
+Further exploration is needed to understand these results but overall:
 
+1.  Correlation does not seem to place a large part in the power calculations for win ratio. Originally I thought a higher correlation would lower power, but it seems to be at a minimum when correlation is .5. It's possibly driven by a drop in power in ambulation status - although
+
+2.  Correlation should not effect power on individual endpoints.
+
+3.  Even though days at home appears best powered, it may not be enough to be a primary endpoint.
 
 ## Limitations
 
