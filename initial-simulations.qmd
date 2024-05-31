@@ -148,7 +148,7 @@ simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation =
 
   out <- data.frame(
     died = rbinom(n = n, size = 1, prob = 1 - logodds2prob(underlying_data[, 1])),
-    days_at_home = pmax(pmin(underlying_data[, 2], 121), 1),
+    days_at_home = round(pmax(pmin(underlying_data[, 2], 121), 1)),
     ambulation_status = get_amb_status(underlying_data[, 3], arm)
   )
 

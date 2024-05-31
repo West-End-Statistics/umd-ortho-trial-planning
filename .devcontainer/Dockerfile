@@ -1,4 +1,4 @@
-FROM rocker/r-ver:4.4 as base
+FROM docker.io/rocker/r-ver:4.4 as base
 RUN /rocker_scripts/setup_R.sh \
     https://packagemanager.posit.co/cran/__linux__/jammy/2024-05-01
     # https://code.visualstudio.com/docs/devcontainers/create-dev-container#:~:text=Note%3A%20The%20DEBIAN_FRONTEND%20export%20avoids%20warnings%20when%20you%20go%20on%20to%20work%20with%20your%20container.
