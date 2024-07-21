@@ -94,17 +94,44 @@ get_amb_status <- function(x, arm = c("placebo", "active")) {
     )
   )
 }
+
+get_amb_status2 <- function(
+    x,
+    unable_to_walk = .07,
+    walk_w_human = .37,
+    walk_w_aid = .34) {
+  cut_to_use <- qnorm(
+    cumsum(
+      c(unable_to_walk, walk_w_human, walk_w_aid)
+    )
+  )
+
+  cut(x,
+    c(-Inf, cut_to_use, Inf),
+    labels = c(
+      "unable to walk",
+      "walk with human assistance",
+      "walk with aid",
+      "walk without assistance"
+    )
+  )
+}
 ```
 
 ```{r}
 
 latent_variable <- rnorm(10000)
-placebo_status <- get_amb_status(latent_variable, arm = "placebo")
-active_status <- get_amb_status(latent_variable, arm = "active")
+active_variable <- rnorm(10000, mean = .2)
+placebo_status <- get_amb_status2(
+  latent_variable
+)
+active_status <- get_amb_status2(
+  active_variable
+)
 
 rbind(
   data.frame(latent_variable, amb_4_months = placebo_status, arm = "placebo"),
-  data.frame(latent_variable, amb_4_months = active_status, arm = "active")
+  data.frame(latent_variable = active_variable, amb_4_months = active_status, arm = "active")
 ) |>
   ggplot(aes(x = latent_variable, fill = amb_4_months)) +
   geom_histogram(binwidth = .03) +
@@ -132,9 +159,11 @@ simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation =
   if (arm == "placebo") {
     log_odds_surv <- prob2odds(.85)
     d_at_home <- 67
+    latent_walk <- 0
   } else {
     log_odds_surv <- prob2odds(.9)
     d_at_home <- 78
+    latent_walk <- .2
   }
 
   underlying_data <- mvtnorm::rmvnorm(
@@ -142,7 +171,7 @@ simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation =
     c(
       log_odds_surv,
       d_at_home,
-      0
+      latent_walk
     ),
     covar
   )
@@ -150,20 +179,79 @@ simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation =
   out <- data.frame(
     died = rbinom(n = n, size = 1, prob = 1 - logodds2prob(underlying_data[, 1])),
     days_at_home = round(pmax(pmin(underlying_data[, 2], 121), 1)),
-    ambulation_status = get_amb_status(underlying_data[, 3], arm)
+    ambulation_status = get_amb_status2(underlying_data[, 3])
   )
 
   out$amb_status_numeric <- as.numeric(out$ambulation_status)
   out
 }
 
-# The following function creates a full trial with both arms
-simulate_trial <- function(n_per_arm, outcome_correlation = 0) {
-  out <- dplyr::bind_rows(
-    placebo = simulate_data(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
-    active = simulate_data(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
-    .id = "arm"
+simulate_data2 <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
+  arm <- match.arg(arm)
+
+  sds <- matrix(1, ncol = 1, nrow = 3)
+  covar <- sds %*% t(sds)
+  non_diag_sel <- lower.tri(covar) | upper.tri(covar)
+  covar[non_diag_sel] <- covar[non_diag_sel] * outcome_correlation
+  if (arm == "placebo") {
+    prob_surv <- .85
+    d_at_home <- 67
+    latent_walk <- 0
+  } else {
+    prob_surv <- .9
+    d_at_home <- 78
+    latent_walk <- .2
+  }
+
+  underlying_data <- mvtnorm::rmvnorm(
+    n = n,
+    c(
+      0, 0, 0
+    ),
+    covar
   )
+
+  to_prob <- pnorm(underlying_data)
+  out <- data.frame(
+    died = qbinom(to_prob[, 1], prob = 1 - prob_surv, size = 1),
+    days_at_home = qnorm(to_prob[, 2], mean = d_at_home, sd = 20),
+    ambulation_status = qnorm(to_prob[, 3], mean = latent_walk, sd = 1)
+  )
+
+  out$days_at_home <- round(pmax(pmin(out$days_at_home, 121), 1))
+  out$ambulation_status <- get_amb_status2(out$ambulation_status)
+
+  out$amb_status_numeric <- as.numeric(out$ambulation_status)
+  out
+}
+
+custom_outcome_corr <- function(died_daysathome = 0, died_ambulation = 0, days_ambulation = 0) {
+  c(
+    died_daysathome,
+    died_ambulation,
+    died_daysathome,
+    days_ambulation,
+    died_ambulation,
+    days_ambulation
+  )
+}
+
+
+# The following function creates a full trial with both arms
+simulate_trial <- function(n_per_arm, outcome_correlation = 0, method = 1) {
+  if (method == 1) {
+    out <- dplyr::bind_rows(
+      placebo = simulate_data(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
+      active = simulate_data(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
+      .id = "arm"
+    )
+  } else if (method == 2) {
+    out <- dplyr::bind_rows(
+      placebo = simulate_data2(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
+      active = simulate_data2(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
+      .id = "arm"
+    )
+  }
 
   out$arm <- factor(out$arm, c("placebo", "active"))
   out
@@ -177,10 +265,14 @@ The table below shows that the observed outcomes in both an uncorrelated and hig
 
 ```{r}
 set.seed(20240515)
-trial_no_corr <- simulate_trial(10000, outcome_correlation = 0)
-trial_hi_corr <- simulate_trial(10000, outcome_correlation = .9)
-d_no_corr <- simulate_data(10000, outcome_correlation = 0)
-d_hi_corr <- simulate_data(10000, outcome_correlation = .9)
+cur_method <- 2
+trial_no_corr <- simulate_trial(10000, outcome_correlation = 0, method = cur_method)
+trial_hi_corr <- simulate_trial(10000, outcome_correlation = .9, method = cur_method)
+trial_cust_corr <- simulate_trial(10000, outcome_correlation = custom_outcome_corr(.3, .5, -.5), method = cur_method)
+
+d_no_corr <- simulate_data2(10000, outcome_correlation = 0)
+d_hi_corr <- simulate_data2(10000, outcome_correlation = .9)
+d_cust_corr <- simulate_data2(10000, outcome_correlation = custom_outcome_corr(.3, .5, -.5))
 
 make_summary_tbl <- function(d) {
   gtsummary::tbl_summary(d,
@@ -196,9 +288,10 @@ make_summary_tbl <- function(d) {
 gtsummary::tbl_merge(
   list(
     make_summary_tbl(trial_no_corr),
-    make_summary_tbl(trial_hi_corr)
+    make_summary_tbl(trial_hi_corr),
+    make_summary_tbl(trial_cust_corr)
   ),
-  tab_spanner = c("No Correlation", "High Correlation")
+  tab_spanner = c("No Corr.", "High Corr.", "Variable Corr.")
 )
 ```
 
@@ -216,18 +309,26 @@ d_hi_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
   cor(method = "spearman")
 ```
 
+
+The last example uses different correlation between the different endpoints - including a negative correlation between ambulation and days at home.
+
+```{r}
+d_cust_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
+  cor(method = "spearman")
+```
+
 ### Example Data
 
 The output below shows a hypothetical trial with 75 subjects per arm:
 
 ```{r}
 set.seed(2024051)
-no_corr_simple_trial <- simulate_trial(n = 75, outcome_correlation = 0)
+no_corr_simple_trial <- simulate_trial(n = 150, outcome_correlation = 0)
 make_summary_tbl(no_corr_simple_trial)
 bt_out <- BuyseTest(
   arm ~ bin(died, operator = "<0") +
     cont(amb_status_numeric, threshold = 1) +
-    cont(days_at_home, threshold = 2),
+    cont(days_at_home, threshold = 7),
   method.inference = "u-statistic",
   trace = 0,
   data = no_corr_simple_trial
@@ -265,14 +366,14 @@ lm(days_at_home ~ arm, data = no_corr_simple_trial) |>
 
 ## Evaluating Power
 
-Power will be evaluated for a trial with 75 subjects per arm, and correlations between none, medium (.5) and high (.9). Power was calculated for the winratio test and the individual components with alpha = .05 and 1000 simulations.
+Power will be evaluated for a trial with 150 subjects per arm, and correlations between none, medium (.5) and high (.9). Power was calculated for the winratio test and the individual components with alpha = .05 and 1000 simulations.
 
 ```{r}
 evaluate_dataset <- function(d, alpha = .05) {
   bt_out <- BuyseTest(
     arm ~ bin(died, operator = "<0") +
       cont(amb_status_numeric, threshold = 1) +
-      cont(days_at_home, threshold = 1),
+      cont(days_at_home, threshold = 7),
     method.inference = "u-statistic",
     trace = 0,
     data = d
@@ -315,7 +416,7 @@ evaluate_dataset <- function(d, alpha = .05) {
 
 ```{r}
 num_sims <- 1000
-num_pats <- 75
+num_pats <- 150
 
 
 params <- tidyr::crossing(
@@ -353,7 +454,7 @@ sim_results |>
 
 Further exploration is needed to understand these results but overall:
 
-1.  Correlation does not seem to place a large part in the power calculations for win ratio. Originally I thought a higher correlation would lower power, but it seems to be at a minimum when correlation is .5. It's possibly driven by a drop in power in ambulation status - although
+1.  Correlation does not seem to play a large part in the power calculations for win ratio. Originally I thought a higher correlation would lower power, but it seems to be at a minimum when correlation is .5. It's possibly driven by a drop in power in ambulation status - although
 
 2.  Correlation should not effect power on individual endpoints.
 
