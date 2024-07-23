@@ -72,4 +72,4 @@ RUN install2.r --error \
 
 # Other packages to install - move away from dev when ready
 RUN install2.r --error \
-    BuyseTest
+    BuyseTest shiny

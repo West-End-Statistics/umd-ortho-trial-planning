@@ -3,11 +3,13 @@ simulate_trial <- function(n_per_arm, ...) {
   out <- dplyr::bind_rows(
     placebo = simulate_data(
       n = n_per_arm,
-      arm = "placebo"
+      arm = "placebo",
+      ...
     ),
     active = simulate_data(
       n = n_per_arm,
-      arm = "active"
+      arm = "active",
+      ...
     ),
     .id = "arm"
   )
