@@ -23,6 +23,11 @@
 name: Deploy app
 
 on:
+   # Manually trigger the workflow
+  workflow_dispatch:
+  # Trigger on push to `main` branch
+  push:
+    branches: ["main"]
   workflow_call:
     inputs:
       cache-version:
