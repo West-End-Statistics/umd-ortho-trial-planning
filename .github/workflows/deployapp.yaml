@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
   # Trigger on push to `main` branch
   push:
-    branches: ["main"]
+    branches: ["master"]
   workflow_call:
     inputs:
       cache-version:
@@ -68,13 +68,13 @@ jobs:
           shinylive::export("shiny", "site")
 
       - name: Upload site artifact
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/master'
         uses: actions/upload-pages-artifact@v3
         with:
           path: "site"
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     needs: build
 
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
