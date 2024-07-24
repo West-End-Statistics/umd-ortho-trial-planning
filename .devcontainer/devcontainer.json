@@ -12,7 +12,8 @@
 				"ms-azuretools.vscode-docker",
 				"christian-kohler.path-intellisense",
 				"mechatroner.rainbow-csv",
-				"Posit.shiny"
+				"Posit.shiny",
+				"ms-vscode.live-server"
 			]
 		}
 	}
