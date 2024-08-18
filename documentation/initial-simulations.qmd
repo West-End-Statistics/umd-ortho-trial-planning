@@ -11,6 +11,9 @@ code-fold: true
 library(dplyr)
 library(ggplot2)
 library(BuyseTest)
+r_files <- list.files(here::here("R"), full.names = TRUE)
+sapply(r_files, source)
+
 
 prob2odds <- function(p, logodds = TRUE) {
   out <- p / (1 - p)
@@ -72,60 +75,60 @@ Ambulation at 4 months is modeled as a normal variable that is then broken up in
 The cutoffs differ depending on if the subject is treated with placebo or active treatment. For example, the graph below shows how a normal variable is split into the appropriate categories. The re is a little variation because of random sampling, but you can see that the walk with human assistance category is visibly larger in the placebo group.
 
 ```{r}
-get_amb_status <- function(x, arm = c("placebo", "active")) {
-  treatment_cutoffs <- qnorm(
-    cumsum(c(.05, .25, .41))
-  )
-  placebo_cutoffs <- qnorm(
-    cumsum(c(.07, .37, .34))
-  )
-  if (arm == "placebo") {
-    cut_to_use <- placebo_cutoffs
-  } else {
-    cut_to_use <- treatment_cutoffs
-  }
-  cut(x,
-    c(-Inf, cut_to_use, Inf),
-    labels = c(
-      "unable to walk",
-      "walk with human assistance",
-      "walk with aid",
-      "walk without assistance"
-    )
-  )
-}
+# get_amb_status <- function(x, arm = c("placebo", "active")) {
+#   treatment_cutoffs <- qnorm(
+#     cumsum(c(.05, .25, .41))
+#   )
+#   placebo_cutoffs <- qnorm(
+#     cumsum(c(.07, .37, .34))
+#   )
+#   if (arm == "placebo") {
+#     cut_to_use <- placebo_cutoffs
+#   } else {
+#     cut_to_use <- treatment_cutoffs
+#   }
+#   cut(x,
+#     c(-Inf, cut_to_use, Inf),
+#     labels = c(
+#       "unable to walk",
+#       "walk with human assistance",
+#       "walk with aid",
+#       "walk without assistance"
+#     )
+#   )
+# }
 
-get_amb_status2 <- function(
-    x,
-    unable_to_walk = .07,
-    walk_w_human = .37,
-    walk_w_aid = .34) {
-  cut_to_use <- qnorm(
-    cumsum(
-      c(unable_to_walk, walk_w_human, walk_w_aid)
-    )
-  )
+# get_amb_status2 <- function(
+#     x,
+#     unable_to_walk = .07,
+#     walk_w_human = .37,
+#     walk_w_aid = .34) {
+#   cut_to_use <- qnorm(
+#     cumsum(
+#       c(unable_to_walk, walk_w_human, walk_w_aid)
+#     )
+#   )
 
-  cut(x,
-    c(-Inf, cut_to_use, Inf),
-    labels = c(
-      "unable to walk",
-      "walk with human assistance",
-      "walk with aid",
-      "walk without assistance"
-    )
-  )
-}
+#   cut(x,
+#     c(-Inf, cut_to_use, Inf),
+#     labels = c(
+#       "unable to walk",
+#       "walk with human assistance",
+#       "walk with aid",
+#       "walk without assistance"
+#     )
+#   )
+# }
 ```
 
 ```{r}
 
 latent_variable <- rnorm(10000)
 active_variable <- rnorm(10000, mean = .2)
-placebo_status <- get_amb_status2(
+placebo_status <- get_amb_status(
   latent_variable
 )
-active_status <- get_amb_status2(
+active_status <- get_amb_status(
   active_variable
 )
 
@@ -145,117 +148,117 @@ rbind(
 A transformed multivariate normal distribution was used to create correlation among the three different outcome. However, since mortality is a binary outcome, the result of the normal draws was used as a log odds estimate for the true rate.
 
 ```{r}
-simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
-  arm <- match.arg(arm)
+# simulate_data <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
+#   arm <- match.arg(arm)
 
-  # set up covariance matrix
-  # .3 means that there is some variance in rates, but it does not effect
-  # the average rate too much. Higher variances drive the base rate up - probably because
-  #
-  sds <- matrix(c(.3, 20, 1), ncol = 1)
-  covar <- sds %*% t(sds)
-  non_diag_sel <- lower.tri(covar) | upper.tri(covar)
-  covar[non_diag_sel] <- covar[non_diag_sel] * outcome_correlation
-  if (arm == "placebo") {
-    log_odds_surv <- prob2odds(.85)
-    d_at_home <- 67
-    latent_walk <- 0
-  } else {
-    log_odds_surv <- prob2odds(.9)
-    d_at_home <- 78
-    latent_walk <- .2
-  }
+#   # set up covariance matrix
+#   # .3 means that there is some variance in rates, but it does not effect
+#   # the average rate too much. Higher variances drive the base rate up - probably because
+#   #
+#   sds <- matrix(c(.3, 20, 1), ncol = 1)
+#   covar <- sds %*% t(sds)
+#   non_diag_sel <- lower.tri(covar) | upper.tri(covar)
+#   covar[non_diag_sel] <- covar[non_diag_sel] * outcome_correlation
+#   if (arm == "placebo") {
+#     log_odds_surv <- prob2odds(.85)
+#     d_at_home <- 67
+#     latent_walk <- 0
+#   } else {
+#     log_odds_surv <- prob2odds(.9)
+#     d_at_home <- 78
+#     latent_walk <- .2
+#   }
 
-  underlying_data <- mvtnorm::rmvnorm(
-    n = n,
-    c(
-      log_odds_surv,
-      d_at_home,
-      latent_walk
-    ),
-    covar
-  )
+#   underlying_data <- mvtnorm::rmvnorm(
+#     n = n,
+#     c(
+#       log_odds_surv,
+#       d_at_home,
+#       latent_walk
+#     ),
+#     covar
+#   )
 
-  out <- data.frame(
-    died = rbinom(n = n, size = 1, prob = 1 - logodds2prob(underlying_data[, 1])),
-    days_at_home = round(pmax(pmin(underlying_data[, 2], 121), 1)),
-    ambulation_status = get_amb_status2(underlying_data[, 3])
-  )
+#   out <- data.frame(
+#     died = rbinom(n = n, size = 1, prob = 1 - logodds2prob(underlying_data[, 1])),
+#     days_at_home = round(pmax(pmin(underlying_data[, 2], 121), 1)),
+#     ambulation_status = get_amb_status2(underlying_data[, 3])
+#   )
 
-  out$amb_status_numeric <- as.numeric(out$ambulation_status)
-  out
-}
+#   out$amb_status_numeric <- as.numeric(out$ambulation_status)
+#   out
+# }
 
-simulate_data2 <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
-  arm <- match.arg(arm)
+# simulate_data2 <- function(n, arm = c("placebo", "active"), outcome_correlation = 0) {
+#   arm <- match.arg(arm)
 
-  sds <- matrix(1, ncol = 1, nrow = 3)
-  covar <- sds %*% t(sds)
-  non_diag_sel <- lower.tri(covar) | upper.tri(covar)
-  covar[non_diag_sel] <- covar[non_diag_sel] * outcome_correlation
-  if (arm == "placebo") {
-    prob_surv <- .85
-    d_at_home <- 67
-    latent_walk <- 0
-  } else {
-    prob_surv <- .9
-    d_at_home <- 78
-    latent_walk <- .2
-  }
+#   sds <- matrix(1, ncol = 1, nrow = 3)
+#   covar <- sds %*% t(sds)
+#   non_diag_sel <- lower.tri(covar) | upper.tri(covar)
+#   covar[non_diag_sel] <- covar[non_diag_sel] * outcome_correlation
+#   if (arm == "placebo") {
+#     prob_surv <- .85
+#     d_at_home <- 67
+#     latent_walk <- 0
+#   } else {
+#     prob_surv <- .9
+#     d_at_home <- 78
+#     latent_walk <- .2
+#   }
 
-  underlying_data <- mvtnorm::rmvnorm(
-    n = n,
-    c(
-      0, 0, 0
-    ),
-    covar
-  )
+#   underlying_data <- mvtnorm::rmvnorm(
+#     n = n,
+#     c(
+#       0, 0, 0
+#     ),
+#     covar
+#   )
 
-  to_prob <- pnorm(underlying_data)
-  out <- data.frame(
-    died = qbinom(to_prob[, 1], prob = 1 - prob_surv, size = 1),
-    days_at_home = qnorm(to_prob[, 2], mean = d_at_home, sd = 20),
-    ambulation_status = qnorm(to_prob[, 3], mean = latent_walk, sd = 1)
-  )
+#   to_prob <- pnorm(underlying_data)
+#   out <- data.frame(
+#     died = qbinom(to_prob[, 1], prob = 1 - prob_surv, size = 1),
+#     days_at_home = qnorm(to_prob[, 2], mean = d_at_home, sd = 20),
+#     ambulation_status = qnorm(to_prob[, 3], mean = latent_walk, sd = 1)
+#   )
 
-  out$days_at_home <- round(pmax(pmin(out$days_at_home, 121), 1))
-  out$ambulation_status <- get_amb_status2(out$ambulation_status)
+#   out$days_at_home <- round(pmax(pmin(out$days_at_home, 121), 1))
+#   out$ambulation_status <- get_amb_status2(out$ambulation_status)
 
-  out$amb_status_numeric <- as.numeric(out$ambulation_status)
-  out
-}
+#   out$amb_status_numeric <- as.numeric(out$ambulation_status)
+#   out
+# }
 
-custom_outcome_corr <- function(died_daysathome = 0, died_ambulation = 0, days_ambulation = 0) {
-  c(
-    died_daysathome,
-    died_ambulation,
-    died_daysathome,
-    days_ambulation,
-    died_ambulation,
-    days_ambulation
-  )
-}
+# custom_outcome_corr <- function(died_daysathome = 0, died_ambulation = 0, days_ambulation = 0) {
+#   c(
+#     died_daysathome,
+#     died_ambulation,
+#     died_daysathome,
+#     days_ambulation,
+#     died_ambulation,
+#     days_ambulation
+#   )
+# }
 
 
-# The following function creates a full trial with both arms
-simulate_trial <- function(n_per_arm, outcome_correlation = 0, method = 1) {
-  if (method == 1) {
-    out <- dplyr::bind_rows(
-      placebo = simulate_data(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
-      active = simulate_data(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
-      .id = "arm"
-    )
-  } else if (method == 2) {
-    out <- dplyr::bind_rows(
-      placebo = simulate_data2(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
-      active = simulate_data2(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
-      .id = "arm"
-    )
-  }
+# # The following function creates a full trial with both arms
+# simulate_trial <- function(n_per_arm, outcome_correlation = 0, method = 1) {
+#   if (method == 1) {
+#     out <- dplyr::bind_rows(
+#       placebo = simulate_data(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
+#       active = simulate_data(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
+#       .id = "arm"
+#     )
+#   } else if (method == 2) {
+#     out <- dplyr::bind_rows(
+#       placebo = simulate_data2(n_per_arm, arm = "placebo", outcome_correlation = outcome_correlation),
+#       active = simulate_data2(n_per_arm, arm = "active", outcome_correlation = outcome_correlation),
+#       .id = "arm"
+#     )
+#   }
 
-  out$arm <- factor(out$arm, c("placebo", "active"))
-  out
-}
+#   out$arm <- factor(out$arm, c("placebo", "active"))
+#   out
+# }
 
 ```
 
@@ -265,14 +268,13 @@ The table below shows that the observed outcomes in both an uncorrelated and hig
 
 ```{r}
 set.seed(20240515)
-cur_method <- 2
-trial_no_corr <- simulate_trial(10000, outcome_correlation = 0, method = cur_method)
-trial_hi_corr <- simulate_trial(10000, outcome_correlation = .9, method = cur_method)
-trial_cust_corr <- simulate_trial(10000, outcome_correlation = custom_outcome_corr(.3, .5, -.5), method = cur_method)
+trial_no_corr <- simulate_trial(10000, outcome_correlation = 0)
+trial_hi_corr <- simulate_trial(10000, outcome_correlation = .9)
+trial_cust_corr <- simulate_trial(10000, outcome_correlation = custom_outcome_corr(.3, .5, -.5))
 
-d_no_corr <- simulate_data2(10000, outcome_correlation = 0)
-d_hi_corr <- simulate_data2(10000, outcome_correlation = .9)
-d_cust_corr <- simulate_data2(10000, outcome_correlation = custom_outcome_corr(.3, .5, -.5))
+d_no_corr <- simulate_data(10000, outcome_correlation = 0)
+d_hi_corr <- simulate_data(10000, outcome_correlation = .9)
+d_cust_corr <- simulate_data(10000, outcome_correlation = custom_outcome_corr(.3, .5, -.5))
 
 make_summary_tbl <- function(d) {
   gtsummary::tbl_summary(d,
@@ -343,7 +345,7 @@ The following code shows how each of the three outcomes would be evaluated indiv
 1.  Mortality (Logistic Regression)
 
 ```{r}
-glm(died ~ arm, data = no_corr_simple_trial, family = "binomial") |>
+glm((1 - died) ~ arm, data = no_corr_simple_trial, family = "binomial") |>
   broom::tidy() |>
   subset(term == "armactive")
 ```
@@ -369,53 +371,53 @@ lm(days_at_home ~ arm, data = no_corr_simple_trial) |>
 Power will be evaluated for a trial with 150 subjects per arm, and correlations between none, medium (.5) and high (.9). Power was calculated for the winratio test and the individual components with alpha = .05 and 1000 simulations.
 
 ```{r}
-evaluate_dataset <- function(d, alpha = .05) {
-  bt_out <- BuyseTest(
-    arm ~ bin(died, operator = "<0") +
-      cont(amb_status_numeric, threshold = 1) +
-      cont(days_at_home, threshold = 7),
-    method.inference = "u-statistic",
-    trace = 0,
-    data = d
-  )
-  winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
+# evaluate_dataset <- function(d, alpha = .05) {
+#   bt_out <- BuyseTest(
+#     arm ~ bin(died, operator = "<0") +
+#       cont(amb_status_numeric, threshold = 1) +
+#       cont(days_at_home, threshold = 7),
+#     method.inference = "u-statistic",
+#     trace = 0,
+#     data = d
+#   )
+#   winratio_out <- tibble::as_tibble(confint(bt_out, statistic = "winRatio"), rownames = "term")
 
 
-  winratio_summary <- winratio_out |>
-    subset(term == "days_at_home_t1")
+#   winratio_summary <- winratio_out |>
+#     subset(term == "days_at_home_t7")
 
-  winratio_win <- winratio_summary$estimate > 1 && winratio_summary$p.value < alpha
+#   winratio_win <- winratio_summary$estimate > 1 && winratio_summary$p.value < alpha
 
-  death_summary <- glm(died ~ arm, data = d, family = "binomial") |>
-    broom::tidy() |>
-    subset(term == "armactive")
+#   death_summary <- glm(died ~ arm, data = d, family = "binomial") |>
+#     broom::tidy() |>
+#     subset(term == "armactive")
 
-  death_win <- death_summary$estimate < 0 && death_summary$p.value < alpha
+#   death_win <- death_summary$estimate < 0 && death_summary$p.value < alpha
 
-  amb_status_summary <- MASS::polr(ambulation_status ~ arm,
-    data = d,
-    Hess = TRUE
-  ) |>
-    broom::tidy(p.values = TRUE) |>
-    subset(term == "armactive")
-  amb_status_win <- amb_status_summary$estimate > 0 && amb_status_summary$p.value < alpha
+#   amb_status_summary <- MASS::polr(ambulation_status ~ arm,
+#     data = d,
+#     Hess = TRUE
+#   ) |>
+#     broom::tidy(p.values = TRUE) |>
+#     subset(term == "armactive")
+#   amb_status_win <- amb_status_summary$estimate > 0 && amb_status_summary$p.value < alpha
 
-  days_summary <- lm(days_at_home ~ arm, data = d) |>
-    broom::tidy() |>
-    subset(term == "armactive")
+#   days_summary <- lm(days_at_home ~ arm, data = d) |>
+#     broom::tidy() |>
+#     subset(term == "armactive")
 
-  days_win <- days_summary$estimate > 0 && days_summary$p.value < alpha
-  data.frame(
-    winratio = winratio_win,
-    death = death_win,
-    amb_status = amb_status_win,
-    days = days_win
-  )
-}
+#   days_win <- days_summary$estimate > 0 && days_summary$p.value < alpha
+#   data.frame(
+#     winratio = winratio_win,
+#     death = death_win,
+#     amb_status = amb_status_win,
+#     days = days_win
+#   )
+# }
 ```
 
 ```{r}
-num_sims <- 1000
+num_sims <- 10
 num_pats <- 150
 
 
@@ -430,7 +432,7 @@ params <- tidyr::crossing(
 set.seed(20240512)
 sim_results <- purrr::map(params$correlation, function(.corr) {
   d <- simulate_trial(num_pats, .corr)
-  evaluate_dataset(d)
+  evaluate_dataset(d, include_estimates = FALSE)
 }) |> purrr::list_rbind()
 
 sim_results <- cbind(params, sim_results)
