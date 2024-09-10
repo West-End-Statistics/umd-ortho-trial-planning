@@ -18,3 +18,5 @@
 - User interface updates
   - Settings and output in various tabs to allow for easier setting
   - Buttons that run simulations etc. moved to main panel to tie in more closely with outputs
+- Data simulation
+  - Updated simulations to use NORTA (normal to anything) strategy.
