@@ -417,7 +417,7 @@ Power will be evaluated for a trial with 150 subjects per arm, and correlations 
 ```
 
 ```{r}
-num_sims <- 10
+num_sims <- 1e4
 num_pats <- 150
 
 
@@ -432,18 +432,24 @@ params <- tidyr::crossing(
 set.seed(20240512)
 sim_results <- purrr::map(params$correlation, function(.corr) {
   d <- simulate_trial(num_pats, .corr)
-  evaluate_dataset(d, include_estimates = FALSE)
+  out <- evaluate_dataset(d, include_estimates = TRUE)
+  out$correlation <- .corr
+  out
 }) |> purrr::list_rbind()
 
-sim_results <- cbind(params, sim_results)
+# sim_results <- cbind(params, sim_results)
 ```
 
 The final power for each outcome and correlation structure is shown below:
 
 ```{r}
 sim_results |>
-  group_by(correlation) |>
-  summarise(across(winratio:days, mean))
+  group_by(correlation, model, term) |>
+  summarise(
+    estimate = mean(estimate),
+    power = mean(win)
+  )
+# summarise(across(winratio:days, mean))
 ```
 
 ```{r}

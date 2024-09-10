@@ -1,4 +1,5 @@
 library(shiny)
+library(bslib)
 library(BuyseTest)
 r_files <- list.files(here::here("R"), full.names = TRUE)
 sapply(r_files, source)
@@ -8,48 +9,100 @@ ui <- fluidPage(
   titlePanel("Ortho Trial Simulations"),
   sidebarLayout(
     sidebarPanel(
-      h4("Placebo Parameters"),
-      numericInput("placebo_survival", "Survival Rate", value = .85),
-      numericInput("placebo_dah_mean", "Days at Home (mean)", value = 67),
-      numericInput("placebo_dah_sd", "Days at Home (sd)", value = 20),
-      numericInput("placebo_unable_to_walk", "Ambulatory: Unable to walk", value = .07),
-      numericInput("placebo_walk_w_human", "Ambulatory: Walk with human", value = .37),
-      numericInput("placebo_walk_w_aid", "Ambulatory: Walk with aid", value = .34),
-      h4("Active Parameters"),
-      numericInput("active_survival", "Survival Rate", value = .90),
-      numericInput("active_dah_mean", "Days at Home (mean)", value = 78),
-      numericInput("active_dah_sd", "Days at Home (sd)", value = 20),
-      numericInput("active_latent_shift", "Ambulatory: Latent Shift", value = .2),
-      h4("General Parameters"),
-      numericInput("corr_died_daysathome",
-        "Correlation: Survival and Days at Home",
-        value = .5
-      ),
-      numericInput("corr_died_ambulation",
-        "Correlation: Survival and Ambulation Status",
-        value = .5
-      ),
-      numericInput("corr_days_ambulation",
-        "Correlation: Days at Home and Ambulation",
-        value = .5
-      ),
-      actionButton("button_check_params", "Check Params"),
-      h4("Simulation Parameters"),
-      sliderInput("n_per_arm",
-        "Observations per arm",
-        min = 10, max = 1000, value = 150
-      ),
-      numericInput("number_sims", "Number of Simulations", min = 2, max = 1e4, step = 1, value = 10),
-      numericInput("amb_status_thresh", "Amb. Status Threshold", value = 1, min = 1, max = 4),
-      numericInput("dah_thresh", "Days at home Threshold", value = 7, min = 1),
-      actionButton("button_run_sims", "Run Simultions")
+      width = 5,
+      navset_card_pill(
+        title = "Parameters",
+        nav_panel(
+          "Data Generation",
+          fluidRow(
+            column(
+              4,
+              h4("Placebo Arm"),
+              numericInput("placebo_survival", "Survival Rate", value = .85),
+              numericInput("placebo_dah_mean", "Days at Home (mean)", value = 67),
+              numericInput("placebo_dah_sd", "Days at Home (sd)", value = 20),
+              numericInput("placebo_unable_to_walk", "Ambulatory: Unable to walk", value = .07),
+              numericInput("placebo_walk_w_human", "Ambulatory: Walk with human", value = .37),
+              numericInput("placebo_walk_w_aid", "Ambulatory: Walk with aid", value = .34),
+            ),
+            column(
+              4,
+              h4("Active Arm"),
+              numericInput("active_survival", "Survival Rate", value = .90),
+              numericInput("active_dah_mean", "Days at Home (mean)", value = 78),
+              numericInput("active_dah_sd", "Days at Home (sd)", value = 20),
+              numericInput("active_latent_shift", "Ambulatory: Latent Shift", value = .2)
+            ),
+            column(
+              4,
+              h4("General Parameters"),
+              numericInput("corr_died_daysathome",
+                "Correlation: Survival and Days at Home",
+                value = .5
+              ),
+              numericInput("corr_died_ambulation",
+                "Correlation: Survival and Ambulation Status",
+                value = .5
+              ),
+              numericInput("corr_days_ambulation",
+                "Correlation: Days at Home and Ambulation",
+                value = .5
+              ),
+            )
+          )
+        ),
+        nav_panel(
+          "Simulation",
+          sliderInput("n_per_arm",
+            "Observations per arm",
+            min = 10, max = 1000, value = 150,
+            width = "90%",
+          ),
+          numericInput("number_sims", "Number of Simulations", min = 2, max = 1e4, step = 1, value = 10),
+          numericInput("amb_status_thresh", "Amb. Status Threshold", value = 1, min = 1, max = 4),
+          numericInput("dah_thresh", "Days at home Threshold", value = 7, min = 1),
+        ),
+        nav_panel(
+          "Statistics",
+          p(
+            "Two-sided value should be double the one-sided.
+          Ex. a two-sided number of .05 should give similar results to one-sided treament = .025"
+          ),
+          numericInput("alpha", "Alpha:", min = .01, max = .2, step = .01, value = .05),
+          radioButtons("alpha_comparison", "Comparison", choices = c(
+            "Two-sided" = "both",
+            "One-sided: Treatment" = "treatment",
+            "One-sided: Control" = "control"
+          ))
+        )
+      )
     ),
     mainPanel(
-      h4("Data Simulation Check"),
-      verbatimTextOutput("corr_summary"),
-      gt::gt_output("trial_summary"),
-      h4("Power Analysis"),
-      verbatimTextOutput("power_summary"),
+      width = 7,
+      navset_card_pill(
+        title = "Data Simulation Ouputs",
+        nav_panel(
+          "Simulation Check",
+          actionButton(
+            "button_check_params",
+            "Check Params"
+          ),
+          verbatimTextOutput("corr_summary"),
+          gt::gt_output("trial_summary"),
+        ),
+        nav_panel(
+          "Power Analysis",
+          actionButton("button_run_sims", "Run Simultions"),
+          gt::gt_output("power_summary"),
+          p(
+            "First three rows show components of winratio",
+            br(),
+            "Last row of win ratio (days_at_home) shows overall win for trial",
+            br(),
+            "Final three rows show univariate models"
+          )
+        )
+      )
     )
   )
 )
@@ -104,6 +157,9 @@ server <- function(input, output, session) {
 
   observeEvent(input$button_run_sims, {
     message("Running ", input$number_sims, " simultions...")
+    progress <- shiny::Progress$new()
+    on.exit(progress$close())
+    progress$set(message = paste0("Running ", input$number_sims, " simulations..."), value = 0)
     out <- lapply(1:input$number_sims, function(.i) {
       d <- simulate_trial(input$n_per_arm,
         survival_prob = c(input$placebo_survival, input$active_survival),
@@ -122,26 +178,48 @@ server <- function(input, output, session) {
         )
       )
 
-      evaluate_dataset(d,
-        alpha = .05,
+      output <- evaluate_dataset(d,
+        alpha = input$alpha,
         amb_status_thresh = input$amb_status_thresh,
-        days_at_home_thresh = input$dah_thresh
+        days_at_home_thresh = input$dah_thresh,
+        alpha_comparison = input$alpha_comparison
       )
+      if (.i %% 10 == 0) {
+        progress$inc(1 / input$number_sims, detail = paste0(.i, "/", input$number_sims))
+      } else {
+        progress$inc(1 / input$number_sims)
+      }
+
+      output
     }) |>
       purrr::list_rbind() |>
+      dplyr::group_by(model, term) |>
       dplyr::summarise(
-        dplyr::across(winratio:days, mean),
-        sims = dplyr::n()
-      )
+        dplyr::across(c(estimate, win), mean),
+        sims = dplyr::n(), .groups = "drop"
+      ) |>
+      dplyr::mutate(
+        term = gsub("_t[0-9]+$", "", term),
+        model = factor(
+          model,
+          c("winratio", "death", "ambulation_status", "days_at_home")
+        ),
+        term = factor(
+          term,
+          c("died", "amb_status_numeric", "days_at_home")
+        )
+      ) |>
+      dplyr::arrange(model, term) |>
+      gt::gt() |>
+      gt::sub_missing(missing_text = "-") |>
+      gt::fmt_number(columns = estimate:win)
+
 
     r$power_summary <- out
   })
 
 
-
-
-
-  output$power_summary <- renderPrint(r$power_summary)
+  output$power_summary <- gt::render_gt(r$power_summary)
   output$trial_summary <- gt::render_gt(r$trial_summary)
   output$corr_summary <- renderPrint(r$corr_data)
 }

@@ -67,12 +67,12 @@ estimate_dataset <- function(d,
     subset(term == "armactive")
 
   # days_win <- days_summary$estimate > 0 && days_summary$p.value < alpha
-  data.frame(
-    winratio = winratio_win,
-    death = death_win,
-    amb_status = amb_status_win,
-    days = days_win
-  )
+  # data.frame(
+  #   winratio = winratio_win,
+  #   death = death_win,
+  #   amb_status = amb_status_win,
+  #   days = days_win
+  # )
 
 
 
