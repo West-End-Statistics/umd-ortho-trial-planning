@@ -1,6 +1,11 @@
 library(shiny)
 library(bslib)
 library(BuyseTest)
+source("R/evaluate_dataset.R")
+source("R/get_amb_status.R")
+source("R/make_summary_table.R")
+source("R/simulate_data.R")
+source("R/simulate_trial.R")
 r_files <- list.files(here::here("R"), full.names = TRUE)
 sapply(r_files, source)
 
