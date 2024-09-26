@@ -6,7 +6,10 @@ simulate_data <- function(
     days_at_home_mean = c(67, 78),
     days_at_home_sd = c(20, 20),
     placebo_amb_status = c(.07, .37, .34),
-    amb_status_latent_shift = .2) {
+    amb_status_latent_shift = .2,
+    survival_missing = 0,
+    days_at_home_missing = 0,
+    amb_status_missing = 0) {
   arm <- match.arg(arm)
 
   sds <- matrix(1, ncol = 1, nrow = 3)
@@ -47,6 +50,15 @@ simulate_data <- function(
     placebo_amb_status[2],
     placebo_amb_status[3]
   )
+
+  missing_index <- sample(1:n, size = round(survival_missing * n))
+  out$died[missing_index] <- NA
+
+  missing_index <- sample(1:n, size = round(days_at_home_missing * n))
+  out$days_at_home[missing_index] <- NA
+
+  missing_index <- sample(1:n, size = round(amb_status_missing * n))
+  out$ambulation_status[missing_index] <- NA
 
   out$amb_status_numeric <- as.numeric(out$ambulation_status)
   out

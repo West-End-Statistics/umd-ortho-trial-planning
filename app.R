@@ -43,16 +43,32 @@ ui <- fluidPage(
               h4("General Parameters"),
               numericInput("corr_died_daysathome",
                 "Correlation: Survival and Days at Home",
-                value = .5
+                value = .5,
+                min = -1, max = 1
               ),
               numericInput("corr_died_ambulation",
                 "Correlation: Survival and Ambulation Status",
-                value = .5
+                value = .5,
+                min = -1, max = 1
               ),
               numericInput("corr_days_ambulation",
                 "Correlation: Days at Home and Ambulation",
-                value = .5
+                value = .5,
+                min = -1, max = 1
               ),
+              h4("Missing Rates"),
+              numericInput("perc_missing_surv", "Survival",
+                value = 0,
+                min = 0, max = 1
+              ),
+              numericInput("perc_missing_amb", "Ambulation",
+                value = 0,
+                min = 0, max = 1
+              ),
+              numericInput("perc_missing_dah", "Days at Home",
+                value = 0,
+                min = 0, max = 1
+              )
             )
           )
         ),
@@ -130,10 +146,13 @@ server <- function(input, output, session) {
         input$corr_died_daysathome,
         input$corr_died_ambulation,
         input$corr_days_ambulation
-      )
+      ),
+      survival_missing = input$perc_missing_surv,
+      days_at_home_missing = input$perc_missing_dah,
+      amb_status_missing = input$perc_missing_amb
     )
     r$corr_data <- d_cust_corr[, c("died", "days_at_home", "amb_status_numeric")] |>
-      cor(method = "spearman")
+      cor(method = "spearman", use = "pairwise.complete.obs")
   })
 
   observeEvent(input$button_check_params, {
@@ -151,7 +170,10 @@ server <- function(input, output, session) {
         input$corr_died_daysathome,
         input$corr_died_ambulation,
         input$corr_days_ambulation
-      )
+      ),
+      survival_missing = input$perc_missing_surv,
+      days_at_home_missing = input$perc_missing_dah,
+      amb_status_missing = input$perc_missing_amb
     )
 
     out <- make_summary_tbl(
@@ -180,7 +202,10 @@ server <- function(input, output, session) {
           input$corr_died_daysathome,
           input$corr_died_ambulation,
           input$corr_days_ambulation
-        )
+        ),
+        survival_missing = input$perc_missing_surv,
+        days_at_home_missing = input$perc_missing_dah,
+        amb_status_missing = input$perc_missing_amb
       )
 
       output <- evaluate_dataset(d,

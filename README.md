@@ -1,12 +1,12 @@
 # Orthopedic Trial Planning Application
 
 
+## Changes
+### 2024-09-25
+- Added ability to add missing outcomes to data - % missing per outcome.
 
-## Current To-Do
-- [ ] Add ability to add missing outcomes to data - % missing per outcome.
 
-
-## Changes (2024-09-09)
+### 2024-09-09
 - Statistics Parameters
   - Added ability to have one or two-sided alpha. When using one-sided you can specify whether to test against control or active arm.
   - Ability to modify alpha
