@@ -1,0 +1,218 @@
+---
+title: "Simulations for Interim Analysis"
+date: today
+format: 
+  html:
+    embed-resources: true
+code-fold: true
+---
+
+```{r}
+#| output: false
+library(dplyr)
+library(ggplot2)
+library(BuyseTest)
+library(cmdstanr)
+r_files <- list.files(here::here("R"), full.names = TRUE)
+sapply(r_files, source)
+```
+
+```{r}
+make_stan_data <- function(x, prior_mean = 1, prior_std = 1) {
+  list(
+    win_ratio = x$estimate,
+    win_ratio_ste = x$std.error,
+    prior_mean = prior_mean,
+    prior_std = prior_std
+  )
+}
+
+hit_success <- function(x) {
+  data.frame(
+    hd_superiority1 = x$pr_treatment_benefit > .99,
+    hd_superiority2 = x$pr_wr_15 > .90,
+    hd_inferiority = x$pr_treatment_benefit < .01,
+    hd_equivalence = x$pr_equivalence > .9,
+    ld_superiority1 = x$pr_treatment_benefit > .975,
+    ld_superiority2 = x$pr_wr_13 > .90,
+    ld_inferiority = x$pr_treatment_benefit < .025,
+    ld_equivalence = x$pr_equivalence > .9
+  )
+}
+
+stan_success <- function(fit) {
+  summary_vals <- fit$summary("theta",
+    pr_treatment_benefit = ~ mean(. > 1),
+    pr_wr_15 = ~ mean(. > 1.5),
+    pr_wr_13 = ~ mean(. > 1.3),
+    pr_equivalence = ~ mean(. > .8 & . < 1.25)
+  )
+  hit_success(summary_vals)
+}
+subset_trial <- function(n_per_arm = 50, d) {
+  total_subj <- nrow(d)
+  if (n_per_arm * 2 > total_subj) {
+    stop("Cannot subset more than exists")
+  }
+
+  part_1 <- 1:n_per_arm
+  part_2 <- part_1 + total_subj / 2
+  d[c(part_1, part_2), ]
+}
+
+summarize_results <- function(x) {
+  x |>
+    mutate(analysis_amount = as.numeric(analysis_amount)) |>
+    group_by(.sim) |>
+    mutate(across(c(matches("^[lh]d_")), function(x) cumsum(x) > 0L)) |>
+    group_by(analysis_amount) |>
+    summarise(across(-.sim, mean))
+}
+
+
+file <- here::here("inst", "stanmod", "meta.stan")
+mod <- cmdstan_model(file)
+```
+
+```{r}
+set.seed(20250210)
+
+n_per_arm <- 200
+data_cuts <- seq(50, n_per_arm, by = 50)
+names(data_cuts) <- data_cuts
+
+total_sims <- 1000
+```
+
+
+
+## Simulation Overiew
+
+The simulations look at a trial with 400 total subjects (200/arm). An interim look is taken as soon as 50 subjects are available in each arm, and then repeated every 50 subjects until the full enrollment occurs. 
+
+At each look, the following criteria are used:
+
+
+| **High differentiation comparison** |             |                                                   |
+| ----------------------------------- | ----------- | ------------------------------------------------- |
+| id                                  | **Type**    | **Threshold**                                     |
+| hd_superiority1                     | Superiority | 99% probability of treatment benefit              |
+| hd_superiority2                     |             | 90% probability of win ratio > 1.5                |
+| hd_inferiority                      | Inferiority | 1% probability of treatment benefit               |
+| hd_equivalence                      | Equivalence | 90% probability between win ratio of 0.8 and 1.25 |
+
+
+| **Low differentiation comparison** |             |                                                   |
+| ---------------------------------- | ----------- | ------------------------------------------------- |
+| id                                 | **Type**    | **Threshold**                                     |
+| ld_superiority1                    | Superiority | 97.5% probability of treatment benefit            |
+| ld_superiority2                    |             | 90% probability of win ratio > 1.3                |
+| ld_inferiority                     | Inferiority | 2.5% probability of treatment benefit             |
+| ld_equivalence                     | Equivalence | 90% probability between win ratio of 0.8 and 1.25 |
+
+
+Simulations under the alternative hypothesis were run using the previously defined assumed rates:
+
+|                  | Control | Active |
+| ---------------- | ------- | ------ |
+| Survival         | .85     | .9     |
+| Days at home     | 67      | 78     |
+| Amb Status Shift |         | 0.2    |
+
+
+Additionally, a null hypothesis were also performed to see what type I error rates were.
+
+
+`r total_sims` simulations were run for each scenario.
+
+## Results
+
+The tables below show the rates for the number of times each criteria is hit. The rates are cumulative - so if superiority is hit with 50, it will automatically hit at 100, 150, and 200.
+Additionally branching logic is not implemented. For example if inferiority is hit at 50, the trial does not stop.
+
+### Alternative Hypothesis Results
+
+```{r}
+#| cache: true
+sim_results <- 1:total_sims |>
+  purrr::set_names() |>
+  purrr::map(function(x) {
+    all_trial_data <- simulate_trial(n_per_arm = n_per_arm)
+    data_subsets <- purrr::map(data_cuts, subset_trial, d = all_trial_data)
+    freq_estimates <- data_subsets |>
+      purrr::map(estimate_dataset) |>
+      purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
+
+    trial_output <- purrr::map(freq_estimates, function(x) {
+      fit <- mod$sample(
+        data = make_stan_data(x, prior_std = 1),
+        seed = 123,
+        chains = 1,
+        parallel_chains = 1,
+        refresh = 0,
+        show_messages = FALSE
+      )
+      stan_success(fit)
+    }) |>
+      purrr::list_rbind(names_to = "analysis_amount")
+
+    trial_output
+  }) |>
+  purrr::list_rbind(names_to = ".sim")
+
+```
+
+```{r}
+summarize_results(sim_results) |>
+  flextable::flextable()
+
+```
+
+
+
+## Null Hypothesis Results
+
+
+```{r}
+#| cache: true
+null_sim_results <- 1:total_sims |>
+  purrr::set_names() |>
+  purrr::map(function(x) {
+    all_trial_data <- simulate_trial(
+      n_per_arm = n_per_arm,
+      survival_prob = c(.85, .85),
+      days_at_home_mean = c(70, 70),
+      amb_status_latent_shift = 0
+    )
+    data_subsets <- purrr::map(data_cuts, subset_trial, d = all_trial_data)
+    freq_estimates <- data_subsets |>
+      purrr::map(estimate_dataset) |>
+      purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
+
+    trial_output <- purrr::map(freq_estimates, function(x) {
+      fit <- mod$sample(
+        data = make_stan_data(x, prior_std = 1),
+        seed = 123,
+        chains = 1,
+        parallel_chains = 1,
+        refresh = 0,
+        show_messages = FALSE
+      )
+      stan_success(fit)
+    }) |>
+      purrr::list_rbind(names_to = "analysis_amount")
+
+    trial_output
+  }) |>
+  purrr::list_rbind(names_to = ".sim")
+
+```
+
+```{r}
+null_sim_results |>
+  summarize_results() |>
+  flextable::flextable()
+
+```
+
+
