@@ -3,3 +3,6 @@
 *_files/
 *.html
 site/
+inst/stanmod/meta
+
+.cache/*
