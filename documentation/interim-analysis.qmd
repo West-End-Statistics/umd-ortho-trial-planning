@@ -259,7 +259,8 @@ all_res_temp <- sim_results |>
   split(~.sim) |>
   purrr::map(compute_trial_stop, prefix = "hd") |>
   purrr::list_rbind() |>
-  tidyr::separate(stopping_rule, into = c("group", "rule"))
+  mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0("hd", "_No Conclusion"), stopping_rule)) |>
+  tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
 
 dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
   dplyr::mutate(
@@ -465,7 +466,8 @@ purrr::map(purrr::set_names(c("hd", "ld")), function(.c) {
     split(~.sim) |>
     purrr::map(compute_trial_stop, prefix = .c) |>
     purrr::list_rbind() |>
-    tidyr::separate(stopping_rule, into = c("group", "rule"))
+    mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0(.c, "_No Conclusion"), stopping_rule)) |>
+    tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
   dplyr::bind_rows(res_temp, res_temp |> mutate(rule = "Overall"))
 }) |>
   purrr::list_rbind() |>
@@ -586,7 +588,8 @@ freq_success <- function(x) {
     ld_superiority1 = x$conf.low > 1,
     ld_inferiority = x$conf.high < 1,
     ld_superiority2 = FALSE,
-    ld_equivalence = FALSE
+    ld_equivalence = FALSE,
+    win_ratio = x$estimate
   )
 }
 
@@ -599,11 +602,9 @@ null_sim_results_freq <- purrr::map(
 ) |> purrr::list_rbind(names_to = ".sim")
 null_sim_results_freq$analysis_amount <- as.numeric(null_sim_results_freq$analysis_amount)
 
-
-
 null_sim_results_freq |>
   summarize_results() |>
-  dplyr::select(analysis_amount:ld_inferiority) |>
+  dplyr::select(analysis_amount:ld_inferiority, win_ratio) |>
   flextable::flextable()
 
 purrr::map(purrr::set_names(c("ld")), function(.c) {
@@ -622,5 +623,39 @@ purrr::map(purrr::set_names(c("ld")), function(.c) {
   mutate(overall_average_size = weighted.mean(average_size, total_stops))
 
 
+
+purrr::map(purrr::set_names(c("ld")), function(.c) {
+  res_temp <- null_sim_results_freq |>
+    split(~.sim) |>
+    purrr::map(compute_trial_stop, prefix = .c) |>
+    purrr::list_rbind() |>
+    mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0(.c, "_No Conclusion"), stopping_rule)) |>
+    tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
+  dplyr::bind_rows(res_temp, res_temp |> mutate(rule = "Overall"))
+}) |>
+  purrr::list_rbind() |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  group_by(group, rule) |>
+  summarise(
+    total_stops = n(),
+    average_size = mean(stopping_subjects),
+    average_win_ratio = mean(stopping_win_ratio),
+    trials_stopped_by_90 = quantile(stopping_subjects, .9),
+    trials_stopped_by_95 = quantile(stopping_subjects, .95),
+    .groups = "drop"
+  ) |>
+  flextable::flextable() |>
+  flextable::set_header_labels(
+    group = "Group",
+    rule = "Rule",
+    total_stops = "Total Stops",
+    average_size = "Average Size",
+    average_win_ratio = "Average Win Ratio",
+    trials_stopped_by_90 = "90% of Trials Stopped",
+    trials_stopped_by_95 = "95% of Trials Stopped"
+  )
 ```
 
