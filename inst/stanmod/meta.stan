@@ -7,10 +7,15 @@ data {
 }
 
 parameters {
-  real theta;
+  real theta_raw;
 }
 
 model {
-  theta ~ normal(prior_mean, prior_std);
-  win_ratio ~ normal(theta, win_ratio_ste);
+  theta_raw ~ normal(prior_mean, prior_std);
+  win_ratio ~ normal(theta_raw, win_ratio_ste);
+}
+
+generated quantities {
+   real theta;
+   theta = exp(theta_raw);
 }

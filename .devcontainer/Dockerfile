@@ -75,3 +75,7 @@ RUN install2.r --error \
     BuyseTest shiny shinylive WinRatio ordinal truncnorm
 
 RUN apt install libarchive13
+
+RUN install2.r --error \
+    ggalluvial
+

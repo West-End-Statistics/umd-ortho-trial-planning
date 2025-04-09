@@ -10,6 +10,7 @@ estimate_dataset <- function(d,
   old_options <- BuyseTest.options()
   BuyseTest.options(
     conf.level = confint_width
+    # order.Hprojection = 2
   )
 
   on.exit(
@@ -19,9 +20,10 @@ estimate_dataset <- function(d,
     arm ~ bin(died, operator = "<0") +
       cont(amb_status_numeric, threshold = amb_status_thresh) +
       cont(days_at_home, threshold = days_at_home_thresh),
-    method.inference = "u-statistic",
+    # method.inference = "varExact permutation",
     trace = 0,
-    data = d
+    data = d,
+    cpus = 2
   )
 
   winratio_out <- tibble::as_tibble(

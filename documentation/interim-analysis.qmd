@@ -13,15 +13,18 @@ library(dplyr)
 library(ggplot2)
 library(BuyseTest)
 library(cmdstanr)
+library(furrr)
+library(ggalluvial)
 r_files <- list.files(here::here("R"), full.names = TRUE)
 sapply(r_files, source)
 ```
 
 ```{r}
-make_stan_data <- function(x, prior_mean = 1, prior_std = 1) {
+make_stan_data <- function(x, prior_mean = 0, prior_std = 1) {
   list(
-    win_ratio = x$estimate,
-    win_ratio_ste = x$std.error,
+    # transformations based on u - statistic
+    win_ratio = log(x$estimate),
+    win_ratio_ste = x$std.error / x$estimate,
     prior_mean = prior_mean,
     prior_std = prior_std
   )
@@ -45,9 +48,11 @@ stan_success <- function(fit) {
     pr_treatment_benefit = ~ mean(. > 1),
     pr_wr_15 = ~ mean(. > 1.5),
     pr_wr_13 = ~ mean(. > 1.3),
-    pr_equivalence = ~ mean(. > .8 & . < 1.25)
+    pr_equivalence = ~ mean(. > .75 & . < 1.34)
   )
-  hit_success(summary_vals)
+  out <- hit_success(summary_vals)
+  out$win_ratio <- fit$summary(variables = "theta")$mean
+  out
 }
 subset_trial <- function(n_per_arm = 50, d) {
   total_subj <- nrow(d)
@@ -69,22 +74,109 @@ summarize_results <- function(x) {
     summarise(across(-.sim, mean))
 }
 
+bayesian_trial_raw_results <- function(
+    n_per_arm, data_cuts, ..., seed = NULL, alpha = .05,
+    prior_std = 1,
+    freq_outputs = FALSE) {
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  all_trial_data <- simulate_trial(n_per_arm = n_per_arm, ...)
+  data_subsets <- purrr::map(data_cuts, subset_trial, d = all_trial_data)
+
+
+  if (freq_outputs) {
+    freq_estimates <- data_subsets |>
+      purrr::map(estimate_dataset) |>
+      purrr::map(function(x) subset(x, term == "days_at_home_t7"))
+    return(freq_estimates)
+  } else {
+    freq_estimates <- data_subsets |>
+      purrr::map(estimate_dataset, alpha = alpha) |>
+      purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
+  }
+
+  trial_output <- purrr::map(freq_estimates, function(x) {
+    fit <- mod$sample(
+      data = make_stan_data(x, prior_std = prior_std),
+      # seed = 123,
+      chains = 1,
+      parallel_chains = 1,
+      refresh = 0,
+      show_messages = FALSE
+    )
+    fit
+    # stan_success(fit)
+  })
+
+  trial_output
+}
+
+make_seeds <- function(n) {
+  as.integer(runif(n, min = 1e6, max = 1e7 - 1))
+}
+
+compute_trial_stop <- function(x, prefix = c("hd", "ld")) {
+  prefix <- match.arg(prefix)
+  col_to_check <- paste(prefix, c("superiority1", "superiority2", "inferiority", "equivalence"), sep = "_")
+
+  all_stops <- sapply(x[, col_to_check], function(y) {
+    x$analysis_amount[which(y)[1]]
+  })
+
+  trial_result <- all_stops[which.min(all_stops)]
+
+
+  if (length(trial_result) != 1) {
+    out <- data.frame(
+      stopping_rule = "No Conclusion",
+      stopping_subjects = max(x$analysis_amount),
+      stopping_win_ratio = tail(x$win_ratio, 1)
+    )
+  } else {
+    win_ratio <- which(unname(trial_result) == x$analysis_amount)
+    win_ratio <- x$win_ratio[win_ratio]
+
+    out <- data.frame(
+      stopping_rule = names(trial_result),
+      stopping_subjects = unname(trial_result),
+      stopping_win_ratio = win_ratio
+    )
+  }
+  out
+}
+
+
 
 file <- here::here("inst", "stanmod", "meta.stan")
 mod <- cmdstan_model(file)
 ```
 
 ```{r}
-set.seed(20250210)
+set.seed(20250223)
 
-n_per_arm <- 200
-data_cuts <- seq(50, n_per_arm, by = 50)
+n_per_arm <- 400
+data_cuts <- seq(50, n_per_arm, by = 25)
 names(data_cuts) <- data_cuts
+prior_std <- .5
 
-total_sims <- 1000
+
+total_sims <- 250
+params <- tibble::tibble(
+  n_per_arm = n_per_arm,
+  data_cuts = list(data_cuts),
+  seed = make_seeds(total_sims)
+)
+plan(sequential)
+# plan(multicore, workers = 1)
 ```
 
 
+```{r}
+# cm <- cachem::cache_disk(dir = here::here(".cache", "bayesian_trial_raw_results"))
+# bayesian_trial_raw_results <- memoise::memoise(bayesian_trial_raw_results, cache = cm)
+```
 
 ## Simulation Overiew
 
@@ -99,7 +191,7 @@ At each look, the following criteria are used:
 | hd_superiority1                     | Superiority | 99% probability of treatment benefit              |
 | hd_superiority2                     |             | 90% probability of win ratio > 1.5                |
 | hd_inferiority                      | Inferiority | 1% probability of treatment benefit               |
-| hd_equivalence                      | Equivalence | 90% probability between win ratio of 0.8 and 1.25 |
+| hd_equivalence                      | Equivalence | 90% probability between win ratio of 0.75 and 1.34 |
 
 
 | **Low differentiation comparison** |             |                                                   |
@@ -108,16 +200,16 @@ At each look, the following criteria are used:
 | ld_superiority1                    | Superiority | 97.5% probability of treatment benefit            |
 | ld_superiority2                    |             | 90% probability of win ratio > 1.3                |
 | ld_inferiority                     | Inferiority | 2.5% probability of treatment benefit             |
-| ld_equivalence                     | Equivalence | 90% probability between win ratio of 0.8 and 1.25 |
+| ld_equivalence                     | Equivalence | 90% probability between win ratio of 0.75 and 1.34 |
 
 
 Simulations under the alternative hypothesis were run using the previously defined assumed rates:
 
-|                  | Control | Active |
-| ---------------- | ------- | ------ |
-| Survival         | .85     | .9     |
-| Days at home     | 67      | 78     |
-| Amb Status Shift |         | 0.2    |
+|                  | Control | Active | Active (Low Differentiation) |
+| ---------------- | ------- | ------ | -----
+| Survival         | .85     | .9     | .9 |
+| Days at home     | 67      | 78     | 70 |
+| Amb Status Shift |         | 0.2    | 0.1 |
 
 
 Additionally, a null hypothesis were also performed to see what type I error rates were.
@@ -130,82 +222,237 @@ Additionally, a null hypothesis were also performed to see what type I error rat
 The tables below show the rates for the number of times each criteria is hit. The rates are cumulative - so if superiority is hit with 50, it will automatically hit at 100, 150, and 200.
 Additionally branching logic is not implemented. For example if inferiority is hit at 50, the trial does not stop.
 
-### Alternative Hypothesis Results
+### Alternative Hypothesis Results - High Differentiation
+
 
 ```{r}
-#| cache: true
-sim_results <- 1:total_sims |>
-  purrr::set_names() |>
-  purrr::map(function(x) {
-    all_trial_data <- simulate_trial(n_per_arm = n_per_arm)
-    data_subsets <- purrr::map(data_cuts, subset_trial, d = all_trial_data)
-    freq_estimates <- data_subsets |>
-      purrr::map(estimate_dataset) |>
-      purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
+#| warning: false
+sim_calcs <- params |>
+  furrr::future_pmap(bayesian_trial_raw_results,
+    prior_std = prior_std,
+    .options = furrr_options(seed = TRUE),
+    .progress = interactive()
+  )
+```
 
-    trial_output <- purrr::map(freq_estimates, function(x) {
-      fit <- mod$sample(
-        data = make_stan_data(x, prior_std = 1),
-        seed = 123,
-        chains = 1,
-        parallel_chains = 1,
-        refresh = 0,
-        show_messages = FALSE
-      )
-      stan_success(fit)
-    }) |>
-      purrr::list_rbind(names_to = "analysis_amount")
 
-    trial_output
-  }) |>
-  purrr::list_rbind(names_to = ".sim")
-
+```{r}
+sim_results <- purrr::map(
+  sim_calcs,
+  function(x) purrr::map(x, stan_success) |> purrr::list_rbind(names_to = "analysis_amount")
+) |> purrr::list_rbind(names_to = ".sim")
+sim_results$analysis_amount <- as.numeric(sim_results$analysis_amount)
 ```
 
 ```{r}
-summarize_results(sim_results) |>
+sim_results |>
+  summarize_results() |>
   flextable::flextable()
+```
+
+The following table shows why trials stopped (No Conclusions is used if none of the criteria are met). The average trial size for each conclusion and overall are shown. Only the high differentiation are shown here since this trial has high power.
+
+
+```{r}
+
+
+
+all_res_temp <- sim_results |>
+  split(~.sim) |>
+  purrr::map(compute_trial_stop, prefix = "hd") |>
+  purrr::list_rbind() |>
+  mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0("hd", "_No Conclusion"), stopping_rule)) |>
+  tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
+
+dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  group_by(group, rule) |>
+  summarise(
+    total_stops = n(),
+    average_size = mean(stopping_subjects),
+    average_win_ratio = mean(stopping_win_ratio),
+    trials_stopped_by_90 = quantile(stopping_subjects, .9),
+    trials_stopped_by_95 = quantile(stopping_subjects, .95),
+    .groups = "drop"
+  ) |>
+  flextable::flextable() |>
+  flextable::set_header_labels(
+    group = "Group",
+    rule = "Rule",
+    total_stops = "Total Stops",
+    average_size = "Average Size",
+    average_win_ratio = "Average Win Ratio",
+    trials_stopped_by_90 = "90% of Trials Stopped",
+    trials_stopped_by_95 = "95% of Trials Stopped"
+  )
 
 ```
 
 
+The following diagram shows the flow of when different criteria are hit at each sample size. Note that the `NA` stratum represents trials that have already been stopped.
 
-## Null Hypothesis Results
+```{r}
+
+alluvial_df <- sim_results |>
+  split(~.sim) |>
+  purrr::map(compute_trial_stop, prefix = "hd") |>
+  purrr::list_rbind(names_to = ".sim") |>
+  select(-stopping_win_ratio) |>
+  tidyr::expand_grid(all_cuts = data_cuts) |>
+  group_by(.sim) |>
+  filter(all_cuts <= stopping_subjects) |>
+  mutate(stopping_rule = if_else(all_cuts < stopping_subjects, "No Conclusion", stopping_rule)) |>
+  ungroup() |>
+  mutate(
+    stopping_rule = factor(stopping_rule),
+    stopping_rule = forcats::fct_relevel(stopping_rule, "No Conclusion")
+  ) |>
+  select(-stopping_subjects) |>
+  tidyr::pivot_wider(names_from = all_cuts, values_from = stopping_rule) |>
+  group_by(across(-.sim)) |>
+  summarise(Freq = n(), .groups = "drop")
+
+alluvial_df |>
+  to_lodes_form(key = "Trial Size", axes = seq_len(ncol(alluvial_df) - 1)) |>
+  ggplot() +
+  aes(x = `Trial Size`, stratum = stratum, alluvium = alluvium, label = stratum, y = Freq) +
+  geom_alluvium(fill = "lightblue") +
+  geom_stratum(aes(fill = stratum)) +
+  # geom_text(stat = "stratum", angle = 90) +
+  theme_minimal()
+
+```
+
+
+### Alternative Hypothesis - Low Differentiation
+
+```{r}
+#| warning: false
+
+sim_calcs <- params |>
+  furrr::future_pmap(bayesian_trial_raw_results,
+    days_at_home_mean = c(67, 70),
+    amb_status_latent_shift = .1,
+    prior_std = prior_std,
+    .options = furrr_options(seed = TRUE),
+    .progress = interactive()
+  )
+```
 
 
 ```{r}
-#| cache: true
-null_sim_results <- 1:total_sims |>
-  purrr::set_names() |>
-  purrr::map(function(x) {
-    all_trial_data <- simulate_trial(
-      n_per_arm = n_per_arm,
-      survival_prob = c(.85, .85),
-      days_at_home_mean = c(70, 70),
-      amb_status_latent_shift = 0
-    )
-    data_subsets <- purrr::map(data_cuts, subset_trial, d = all_trial_data)
-    freq_estimates <- data_subsets |>
-      purrr::map(estimate_dataset) |>
-      purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
+sim_results <- purrr::map(
+  sim_calcs,
+  function(x) purrr::map(x, stan_success) |> purrr::list_rbind(names_to = "analysis_amount")
+) |> purrr::list_rbind(names_to = ".sim")
+sim_results$analysis_amount <- as.numeric(sim_results$analysis_amount)
+```
 
-    trial_output <- purrr::map(freq_estimates, function(x) {
-      fit <- mod$sample(
-        data = make_stan_data(x, prior_std = 1),
-        seed = 123,
-        chains = 1,
-        parallel_chains = 1,
-        refresh = 0,
-        show_messages = FALSE
-      )
-      stan_success(fit)
-    }) |>
+```{r}
+sim_results |>
+  summarize_results() |>
+  flextable::flextable()
+```
+
+The following table shows why trials stopped (No Conclusions is used if none of the criteria are met). The average trial size for each conclusion and overall are shown. Only the low differentiation are shown here.
+
+```{r}
+all_res_temp <- sim_results |>
+  split(~.sim) |>
+  purrr::map(compute_trial_stop, prefix = "ld") |>
+  purrr::list_rbind() |>
+  tidyr::separate(stopping_rule, into = c("group", "rule"))
+
+dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  group_by(group, rule) |>
+  summarise(
+    total_stops = n(),
+    average_size = mean(stopping_subjects),
+    average_win_ratio = mean(stopping_win_ratio),
+    trials_stopped_by_90 = quantile(stopping_subjects, .9),
+    trials_stopped_by_95 = quantile(stopping_subjects, .95),
+    .groups = "drop"
+  ) |>
+  flextable::flextable() |>
+  flextable::set_header_labels(
+    group = "Group",
+    rule = "Rule",
+    total_stops = "Total Stops",
+    average_size = "Average Size",
+    average_win_ratio = "Average Win Ratio",
+    trials_stopped_by_90 = "90% of Trials Stopped",
+    trials_stopped_by_95 = "95% of Trials Stopped"
+  )
+
+```
+
+
+The following diagram shows the flow of when different criteria are hit at each sample size. Note that the `NA` stratum represents trials that have already been stopped.
+
+```{r}
+
+alluvial_df <- sim_results |>
+  split(~.sim) |>
+  purrr::map(compute_trial_stop, prefix = "ld") |>
+  purrr::list_rbind(names_to = ".sim") |>
+  select(-stopping_win_ratio) |>
+  tidyr::expand_grid(all_cuts = data_cuts) |>
+  group_by(.sim) |>
+  filter(all_cuts <= stopping_subjects) |>
+  mutate(stopping_rule = if_else(all_cuts < stopping_subjects, "No Conclusion", stopping_rule)) |>
+  ungroup() |>
+  mutate(
+    stopping_rule = factor(stopping_rule),
+    stopping_rule = forcats::fct_relevel(stopping_rule, "No Conclusion")
+  ) |>
+  select(-stopping_subjects) |>
+  tidyr::pivot_wider(names_from = all_cuts, values_from = stopping_rule) |>
+  group_by(across(-.sim)) |>
+  summarise(Freq = n(), .groups = "drop")
+
+alluvial_df |>
+  to_lodes_form(key = "Trial Size", axes = seq_len(ncol(alluvial_df) - 1)) |>
+  ggplot() +
+  aes(x = `Trial Size`, stratum = stratum, alluvium = alluvium, label = stratum, y = Freq) +
+  geom_alluvium(fill = "lightblue") +
+  geom_stratum(aes(fill = stratum)) +
+  # geom_text(stat = "stratum", angle = 90) +
+  theme_minimal()
+
+```
+
+### Null Hypothesis Results
+
+```{r}
+#| warning: false
+null_sim_calcs <- params |>
+  furrr::future_pmap(bayesian_trial_raw_results,
+    prior_std = prior_std,
+    survival_prob = c(.85, .85),
+    days_at_home_mean = c(70, 70),
+    amb_status_latent_shift = 0,
+    .options = furrr_options(seed = TRUE),
+    .progress = interactive()
+  )
+
+```
+
+```{r}
+null_sim_results <- purrr::map(
+  null_sim_calcs,
+  function(x) {
+    purrr::map(x, stan_success) |>
       purrr::list_rbind(names_to = "analysis_amount")
-
-    trial_output
-  }) |>
-  purrr::list_rbind(names_to = ".sim")
-
+  }
+) |> purrr::list_rbind(names_to = ".sim")
+null_sim_results$analysis_amount <- as.numeric(null_sim_results$analysis_amount)
 ```
 
 ```{r}
@@ -215,4 +462,203 @@ null_sim_results |>
 
 ```
 
+
+```{r}
+purrr::map(purrr::set_names(c("hd", "ld")), function(.c) {
+  res_temp <- null_sim_results |>
+    split(~.sim) |>
+    purrr::map(compute_trial_stop, prefix = .c) |>
+    purrr::list_rbind() |>
+    mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0(.c, "_No Conclusion"), stopping_rule)) |>
+    tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
+  dplyr::bind_rows(res_temp, res_temp |> mutate(rule = "Overall"))
+}) |>
+  purrr::list_rbind() |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  group_by(group, rule) |>
+  summarise(
+    total_stops = n(),
+    average_size = mean(stopping_subjects),
+    average_win_ratio = mean(stopping_win_ratio),
+    trials_stopped_by_90 = quantile(stopping_subjects, .9),
+    trials_stopped_by_95 = quantile(stopping_subjects, .95),
+    .groups = "drop"
+  ) |>
+  flextable::flextable() |>
+  flextable::set_header_labels(
+    group = "Group",
+    rule = "Rule",
+    total_stops = "Total Stops",
+    average_size = "Average Size",
+    average_win_ratio = "Average Win Ratio",
+    trials_stopped_by_90 = "90% of Trials Stopped",
+    trials_stopped_by_95 = "95% of Trials Stopped"
+  )
+```
+
+
+```{r}
+
+alluvial_df <- null_sim_results |>
+  split(~.sim) |>
+  purrr::map(compute_trial_stop, prefix = "hd") |>
+  purrr::list_rbind(names_to = ".sim") |>
+  select(-stopping_win_ratio) |>
+  tidyr::expand_grid(all_cuts = data_cuts) |>
+  group_by(.sim) |>
+  filter(all_cuts <= stopping_subjects) |>
+  mutate(stopping_rule = if_else(all_cuts < stopping_subjects, "No Conclusion", stopping_rule)) |>
+  ungroup() |>
+  mutate(
+    stopping_rule = factor(stopping_rule),
+    stopping_rule = forcats::fct_relevel(stopping_rule, "No Conclusion")
+  ) |>
+  select(-stopping_subjects) |>
+  tidyr::pivot_wider(names_from = all_cuts, values_from = stopping_rule) |>
+  group_by(across(-.sim)) |>
+  summarise(Freq = n(), .groups = "drop")
+
+alluvial_df |>
+  to_lodes_form(key = "Trial Size", axes = seq_len(ncol(alluvial_df) - 1)) |>
+  ggplot() +
+  aes(x = `Trial Size`, stratum = stratum, alluvium = alluvium, label = stratum, y = Freq) +
+  geom_alluvium(fill = "lightblue") +
+  geom_stratum(aes(fill = stratum)) +
+  # geom_text(stat = "stratum", angle = 90) +
+  theme_minimal()
+```
+
+
+```{r}
+alluvial_df <- null_sim_results |>
+  split(~.sim) |>
+  purrr::map(compute_trial_stop, prefix = "hd") |>
+  purrr::list_rbind(names_to = ".sim") |>
+  select(-stopping_win_ratio) |>
+  tidyr::expand_grid(all_cuts = data_cuts) |>
+  group_by(.sim) |>
+  filter(all_cuts <= stopping_subjects) |>
+  mutate(stopping_rule = if_else(all_cuts < stopping_subjects, "No Conclusion", stopping_rule)) |>
+  ungroup() |>
+  mutate(
+    stopping_rule = factor(stopping_rule),
+    stopping_rule = forcats::fct_relevel(stopping_rule, "No Conclusion")
+  ) |>
+  select(-stopping_subjects) |>
+  tidyr::pivot_wider(names_from = all_cuts, values_from = stopping_rule) |>
+  group_by(across(-.sim)) |>
+  summarise(Freq = n(), .groups = "drop")
+
+
+alluvial_df |>
+  to_lodes_form(key = "Trial Size", axes = seq_len(ncol(alluvial_df) - 1)) |>
+  ggplot() +
+  aes(x = `Trial Size`, stratum = stratum, alluvium = alluvium, label = stratum, y = Freq) +
+  geom_alluvium(fill = "lightblue") +
+  geom_stratum(aes(fill = stratum)) +
+  # geom_text(stat = "stratum", angle = 90) +
+  theme_minimal()
+
+```
+
+
+### Frequentist Results
+
+The results below just look at the frequentist equivilant of ld_superiority1 and inferiority. The others are set to FALSE for all simulations.
+
+```{r}
+#| eval: true
+
+# frequentist analysis code check Bayesian
+# results are very similar when a wide prior is set
+null_sim_calcs_freq <- params |>
+  furrr::future_pmap(bayesian_trial_raw_results,
+    survival_prob = c(.85, .85),
+    days_at_home_mean = c(70, 70),
+    amb_status_latent_shift = 0,
+    freq_outputs = T,
+    alpha = .05,
+    .options = furrr_options(seed = TRUE),
+    .progress = interactive()
+  )
+
+
+freq_success <- function(x) {
+  data.frame(
+    ld_superiority1 = x$conf.low > 1,
+    ld_inferiority = x$conf.high < 1,
+    ld_superiority2 = FALSE,
+    ld_equivalence = FALSE,
+    win_ratio = x$estimate
+  )
+}
+
+null_sim_results_freq <- purrr::map(
+  null_sim_calcs_freq,
+  function(x) {
+    purrr::map(x, freq_success) |>
+      purrr::list_rbind(names_to = "analysis_amount")
+  }
+) |> purrr::list_rbind(names_to = ".sim")
+null_sim_results_freq$analysis_amount <- as.numeric(null_sim_results_freq$analysis_amount)
+
+null_sim_results_freq |>
+  summarize_results() |>
+  dplyr::select(analysis_amount:ld_inferiority, win_ratio) |>
+  flextable::flextable()
+
+purrr::map(purrr::set_names(c("ld")), function(.c) {
+  null_sim_results_freq |>
+    split(~.sim) |>
+    purrr::map(compute_trial_stop, prefix = .c) |>
+    purrr::list_rbind()
+}) |>
+  purrr::list_rbind(names_to = "stopping_group") |>
+  group_by(stopping_group, stopping_rule) |>
+  summarise(
+    total_stops = n(),
+    average_size = mean(stopping_subjects)
+  ) |>
+  group_by(stopping_group) |>
+  mutate(overall_average_size = weighted.mean(average_size, total_stops))
+
+
+
+purrr::map(purrr::set_names(c("ld")), function(.c) {
+  res_temp <- null_sim_results_freq |>
+    split(~.sim) |>
+    purrr::map(compute_trial_stop, prefix = .c) |>
+    purrr::list_rbind() |>
+    mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0(.c, "_No Conclusion"), stopping_rule)) |>
+    tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
+  dplyr::bind_rows(res_temp, res_temp |> mutate(rule = "Overall"))
+}) |>
+  purrr::list_rbind() |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  group_by(group, rule) |>
+  summarise(
+    total_stops = n(),
+    average_size = mean(stopping_subjects),
+    average_win_ratio = mean(stopping_win_ratio),
+    trials_stopped_by_90 = quantile(stopping_subjects, .9),
+    trials_stopped_by_95 = quantile(stopping_subjects, .95),
+    .groups = "drop"
+  ) |>
+  flextable::flextable() |>
+  flextable::set_header_labels(
+    group = "Group",
+    rule = "Rule",
+    total_stops = "Total Stops",
+    average_size = "Average Size",
+    average_win_ratio = "Average Win Ratio",
+    trials_stopped_by_90 = "90% of Trials Stopped",
+    trials_stopped_by_95 = "95% of Trials Stopped"
+  )
+```
 
