@@ -159,8 +159,10 @@ set.seed(20250223)
 n_per_arm <- 400
 data_cuts <- seq(50, n_per_arm, by = 25)
 names(data_cuts) <- data_cuts
+prior_std <- .5
 
-total_sims <- 10
+
+total_sims <- 250
 params <- tibble::tibble(
   n_per_arm = n_per_arm,
   data_cuts = list(data_cuts),
@@ -227,7 +229,7 @@ Additionally branching logic is not implemented. For example if inferiority is h
 #| warning: false
 sim_calcs <- params |>
   furrr::future_pmap(bayesian_trial_raw_results,
-    prior_std = .5,
+    prior_std = prior_std,
     .options = furrr_options(seed = TRUE),
     .progress = interactive()
   )
@@ -334,7 +336,7 @@ sim_calcs <- params |>
   furrr::future_pmap(bayesian_trial_raw_results,
     days_at_home_mean = c(67, 70),
     amb_status_latent_shift = .1,
-    prior_std = .5,
+    prior_std = prior_std,
     .options = furrr_options(seed = TRUE),
     .progress = interactive()
   )
@@ -432,6 +434,7 @@ alluvial_df |>
 #| warning: false
 null_sim_calcs <- params |>
   furrr::future_pmap(bayesian_trial_raw_results,
+    prior_std = prior_std,
     survival_prob = c(.85, .85),
     days_at_home_mean = c(70, 70),
     amb_status_latent_shift = 0,
