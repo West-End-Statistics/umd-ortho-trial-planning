@@ -2,6 +2,10 @@
 	"name": "${localWorkspaceFolderBasename}",
 	"build": {
 		"dockerfile": "Dockerfile",
+		"options": [
+			"--platform=linux/amd64"
+		],
+		"context": ".",
 		"target": "development"
 	},
 	"customizations": {
@@ -12,8 +16,8 @@
 				"ms-azuretools.vscode-docker",
 				"christian-kohler.path-intellisense",
 				"mechatroner.rainbow-csv",
-				"Posit.shiny",
-				"ms-vscode.live-server"
+				"ms-vscode.live-server",
+				"ShahilKumar.docxreader"
 			]
 		}
 	}
