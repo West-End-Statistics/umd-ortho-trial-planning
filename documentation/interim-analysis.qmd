@@ -186,7 +186,7 @@ params <- tibble::tibble(
   seed = make_seeds(total_sims)
 )
 plan(sequential)
-# plan(multicore, workers = 1)
+# plan(multicore, workers = 4)
 ```
 
 
@@ -303,6 +303,20 @@ dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
     trials_stopped_by_95 = "95% of Trials Stopped"
   )
 
+
+
+dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  filter(rule != "Overall") |>
+  group_by(group, rule) |>
+  ggplot(aes(color = rule, x = stopping_subjects, stopping_win_ratio)) +
+  geom_point(alpha = .5) +
+  theme_bw()
+
+
 ```
 
 
@@ -405,6 +419,18 @@ dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
     trials_stopped_by_95 = "95% of Trials Stopped"
   )
 
+dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
+  dplyr::mutate(
+    rule = factor(rule),
+    rule = forcats::fct_relevel(rule, "Overall", after = Inf)
+  ) |>
+  filter(rule != "Overall") |>
+  group_by(group, rule) |>
+  ggplot(aes(color = rule, x = stopping_subjects, stopping_win_ratio)) +
+  geom_point(alpha = .5) +
+  theme_bw()
+
+
 ```
 
 
@@ -478,7 +504,7 @@ null_sim_results |>
 
 
 ```{r}
-purrr::map(purrr::set_names(c("hd", "ld")), function(.c) {
+x <- purrr::map(purrr::set_names(c("hd", "ld")), function(.c) {
   res_temp <- null_sim_results |>
     split(~.sim) |>
     purrr::map(compute_trial_stop, prefix = .c) |>
@@ -491,7 +517,11 @@ purrr::map(purrr::set_names(c("hd", "ld")), function(.c) {
   dplyr::mutate(
     rule = factor(rule),
     rule = forcats::fct_relevel(rule, "Overall", after = Inf)
-  ) |>
+  )
+
+
+
+x |>
   group_by(group, rule) |>
   summarise(
     total_stops = n(),
@@ -511,6 +541,16 @@ purrr::map(purrr::set_names(c("hd", "ld")), function(.c) {
     trials_stopped_by_90 = "90% of Trials Stopped",
     trials_stopped_by_95 = "95% of Trials Stopped"
   )
+
+
+x |>
+  filter(rule != "Overall") |>
+  # group_by(group, rule) |>
+  ggplot(aes(color = rule, x = stopping_subjects, stopping_win_ratio)) +
+  geom_point(alpha = .5) +
+  theme_bw() +
+  facet_wrap(~group)
+
 ```
 
 
@@ -606,6 +646,8 @@ freq_success <- function(x) {
     ld_inferiority = x$conf.high < 1,
     ld_superiority2 = FALSE,
     ld_equivalence = FALSE,
+    ld_equivalencesuperiority = FALSE,
+    ld_equivalenceinferiority = FALSE,
     win_ratio = x$estimate
   )
 }
