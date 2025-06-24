@@ -1,6 +1,6 @@
 {
     "r.bracketedPaste": true,
-    "r.rterm.linux": "/home/vscode/.local/bin/radian",
+    "r.rterm.linux": "/usr/local/bin/radian",
     "r.plot.useHttpgd": true,
     "editor.formatOnSave": true
 }

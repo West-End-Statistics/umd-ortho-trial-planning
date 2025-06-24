@@ -17,7 +17,8 @@
 				"christian-kohler.path-intellisense",
 				"mechatroner.rainbow-csv",
 				"ms-vscode.live-server",
-				"ShahilKumar.docxreader"
+				"ShahilKumar.docxreader",
+				"streetsidesoftware.code-spell-checker"
 			]
 		}
 	}
