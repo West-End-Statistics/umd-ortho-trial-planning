@@ -8,8 +8,8 @@ code-fold: true
 params:
   prior_std: 0.25
   n_per_arm: 400
-  total_sims: 5
-  num_workers: 4
+  total_sims: 250
+  num_workers: 1
 ---
 
 ```{r}

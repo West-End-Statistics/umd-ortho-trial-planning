@@ -4,6 +4,7 @@
 # Creates output directory with date and parameter values in filename
 
 library(quarto)
+library(withr)
 
 # Get current date
 current_date <- format(Sys.Date(), "%Y%m%d")
@@ -23,22 +24,20 @@ for (prior_std in prior_std_values) {
   cat("Rendering with prior_std =", prior_std, "...\n")
   cat("Output will be saved to:", output_file, "\n")
 
-  # Set working directory to documentation folder for rendering
-  original_wd <- getwd()
-  setwd("documentation")
-  
-  # Render the document with the specified parameter
-  quarto_render(
-    input = "interim-analysis.qmd",
-    output_file = paste0("interim_analysis_", current_date, "_prior_std_", prior_std, ".html"),
-    execute_params = list(prior_std = prior_std)
-  )
-  
-  # Move back to original directory
-  setwd(original_wd)
-  
+  # Use withr to temporarily change working directory for rendering
+  withr::with_dir("documentation", {
+    quarto_render(
+      input = "interim-analysis.qmd",
+      output_file = paste0("interim_analysis_", current_date, "_prior_std_", prior_std, ".html"),
+      execute_params = list(prior_std = prior_std)
+    )
+  })
+
   # Move the output file to the output directory
-  source_file <- file.path("documentation", paste0("interim_analysis_", current_date, "_prior_std_", prior_std, ".html"))
+  source_file <- file.path(
+    "documentation",
+    paste0("interim_analysis_", current_date, "_prior_std_", prior_std, ".html")
+  )
   if (file.exists(source_file)) {
     file.rename(source_file, output_file)
   }

@@ -29,10 +29,7 @@ Alternatively, you may run:
 renv::restore()
 ```
 
-
-
-
-The main parameters are in 
+Which should restore all required packages (you must still run `install_cmdstan`). The interim analysis document contains some parameters that may be modified. The render_interim_analysis.R script runs two versions of the report - one for either 0.25 or .5 as the prior_std.
 
 
 ## Orthopedic Trial Planning Application
