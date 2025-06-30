@@ -1,4 +1,41 @@
-# Orthopedic Trial Planning Application
+# Orthopedic Trial Planing
+
+
+## Running Interim Analysis
+
+This describes the requirements for re-running the code in "documentation/interim-analysis.qmd"
+
+### Dependencies
+
+1. Install cmdstanr and cmdstan [Source](https://mc-stan.org/cmdstanr/articles/cmdstanr.html)
+
+```r
+# we recommend running this is a fresh R session or restarting your current session
+install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+library(cmdstanr)
+install_cmdstan(cores = 2)
+```
+
+```r
+other_deps <- c("broom", "BuyseTest", "dplyr", "flextable", "forcats", 
+"furrr", "ggalluvial", "ggplot2", "gtsummary", "here", "MASS", 
+"mvtnorm", "purrr", "rmarkdown", "tibble", "tidyr")
+install.packages(other_deps)
+```
+
+Alternatively, you may run:
+
+```r
+renv::restore()
+```
+
+
+
+
+The main parameters are in 
+
+
+## Orthopedic Trial Planning Application
 
 
 ## Changes
