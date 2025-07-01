@@ -6,3 +6,4 @@ site/
 inst/stanmod/meta
 
 .cache/*
+CLAUDE.md
