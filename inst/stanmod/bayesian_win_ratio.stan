@@ -23,156 +23,149 @@ data {
 }
 
 transformed data {
-  int n_pairs = n_control * n_treatment;
+  // Compute hierarchical comparisons properly
+  // Each pair is decided at the first differentiating endpoint
   
-  // Pre-compute all pairwise comparisons for each endpoint
-  matrix[n_control, n_treatment] death_wins;
-  matrix[n_control, n_treatment] death_losses;
-  matrix[n_control, n_treatment] amb_wins;
-  matrix[n_control, n_treatment] amb_losses;
-  matrix[n_control, n_treatment] days_wins;
-  matrix[n_control, n_treatment] days_losses;
+  real wins = 0;
+  real losses = 0;
+  real ties = 0;
   
-  // Death comparisons (treatment wins if control dies and treatment doesn't)
+  // Individual endpoint statistics (for comparison with BuyseTest)
+  real death_wins = 0;
+  real death_losses = 0;
+  real death_ties = 0;
+  
+  real amb_wins = 0;
+  real amb_losses = 0;
+  real amb_ties = 0;
+  
+  real days_wins = 0;
+  real days_losses = 0;
+  real days_ties = 0;
+  
+  // Compute all pairwise comparisons hierarchically
   for (i in 1:n_control) {
     for (j in 1:n_treatment) {
-      death_wins[i,j] = (death_control[i] == 1 && death_treatment[j] == 0) ? 1 : 0;
-      death_losses[i,j] = (death_control[i] == 0 && death_treatment[j] == 1) ? 1 : 0;
-    }
-  }
-  
-  // Ambulatory status comparisons (treatment wins if difference > threshold)
-  for (i in 1:n_control) {
-    for (j in 1:n_treatment) {
-      real diff = amb_treatment[j] - amb_control[i];
-      amb_wins[i,j] = (diff > amb_threshold) ? 1 : 0;
-      amb_losses[i,j] = (diff < -amb_threshold) ? 1 : 0;
-    }
-  }
-  
-  // Days at home comparisons (treatment wins if difference > threshold)
-  for (i in 1:n_control) {
-    for (j in 1:n_treatment) {
-      real diff = days_treatment[j] - days_control[i];
-      days_wins[i,j] = (diff > days_threshold) ? 1 : 0;
-      days_losses[i,j] = (diff < -days_threshold) ? 1 : 0;
-    }
-  }
-  
-  // Compute hierarchical win/loss counts
-  int global_wins = 0;
-  int global_losses = 0;
-  
-  // Individual endpoint win/loss counts
-  int death_wins_count = 0;
-  int death_losses_count = 0;
-  int amb_wins_count = 0;
-  int amb_losses_count = 0;
-  int days_wins_count = 0;
-  int days_losses_count = 0;
-  
-  for (i in 1:n_control) {
-    for (j in 1:n_treatment) {
-      // Count individual endpoint comparisons
-      if (death_wins[i,j] == 1) death_wins_count += 1;
-      if (death_losses[i,j] == 1) death_losses_count += 1;
-      if (amb_wins[i,j] == 1) amb_wins_count += 1;
-      if (amb_losses[i,j] == 1) amb_losses_count += 1;
-      if (days_wins[i,j] == 1) days_wins_count += 1;
-      if (days_losses[i,j] == 1) days_losses_count += 1;
-      
-      // Hierarchical decision for this pair
-      if (death_wins[i,j] == 1) {
-        global_wins += 1;
-      } else if (death_losses[i,j] == 1) {
-        global_losses += 1;
-      } else if (amb_wins[i,j] == 1) {
-        global_wins += 1;
-      } else if (amb_losses[i,j] == 1) {
-        global_losses += 1;
-      } else if (days_wins[i,j] == 1) {
-        global_wins += 1;
-      } else if (days_losses[i,j] == 1) {
-        global_losses += 1;
+      // First check death (binary, lower is better)
+      if (death_control[i] == 1 && death_treatment[j] == 0) {
+        // Control died, treatment didn't -> treatment wins
+        wins += 1;
+        death_wins += 1;
+      } else if (death_control[i] == 0 && death_treatment[j] == 1) {
+        // Treatment died, control didn't -> control wins (loss for treatment)
+        losses += 1;
+        death_losses += 1;
+      } else {
+        // Tie on death, check ambulatory status
+        death_ties += 1;
+        
+        real amb_diff = amb_treatment[j] - amb_control[i];
+        if (amb_diff > amb_threshold) {
+          // Treatment has better ambulatory status
+          wins += 1;
+          amb_wins += 1;
+        } else if (amb_diff < -amb_threshold) {
+          // Control has better ambulatory status
+          losses += 1;
+          amb_losses += 1;
+        } else {
+          // Tie on ambulatory, check days at home
+          amb_ties += 1;
+          
+          real days_diff = days_treatment[j] - days_control[i];
+          if (days_diff > days_threshold) {
+            // Treatment has more days at home
+            wins += 1;
+            days_wins += 1;
+          } else if (days_diff < -days_threshold) {
+            // Control has more days at home
+            losses += 1;
+            days_losses += 1;
+          } else {
+            // Complete tie
+            ties += 1;
+            days_ties += 1;
+          }
+        }
       }
     }
   }
+  
+  // Total comparisons
+  real total_comparisons = n_control * n_treatment;
+  
+  // Proportions
+  real win_prop = wins / total_comparisons;
+  real loss_prop = losses / total_comparisons;
+  real tie_prop = ties / total_comparisons;
 }
 
 parameters {
-  // Log win ratios for each endpoint (unconstrained)
-  real log_wr_death;
-  real log_wr_amb;
-  real log_wr_days;
-  real log_wr_global;
+  // Log win ratio parameter
+  real log_wr;
 }
 
 transformed parameters {
-  // Win ratios (always positive)
-  real wr_death = exp(log_wr_death);
-  real wr_amb = exp(log_wr_amb);
-  real wr_days = exp(log_wr_days);
-  real wr_global = exp(log_wr_global);
+  // Win ratio (always positive)
+  real wr = exp(log_wr);
   
-  // Probabilities for binomial likelihood using inv_logit for numerical stability
-  real<lower=0, upper=1> p_death = inv_logit(log_wr_death);
-  real<lower=0, upper=1> p_amb = inv_logit(log_wr_amb);
-  real<lower=0, upper=1> p_days = inv_logit(log_wr_days);
-  real<lower=0, upper=1> p_global = inv_logit(log_wr_global);
+  // Expected win probability under the model using inv_logit for stability
+  real expected_win_prob = inv_logit(log_wr);
 }
 
 model {
-  // Priors on log scale for numerical stability
-  log_wr_death ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_amb ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_days ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_global ~ normal(prior_mean_log_wr, prior_sd_log_wr);
+  // Prior
+  log_wr ~ normal(prior_mean_log_wr, prior_sd_log_wr);
   
-  // Likelihood using sufficient statistics approach
-  // Only include likelihoods when there are actual comparisons
-  
-  // Global hierarchical likelihood
-  if (global_wins + global_losses > 0) {
-    global_wins ~ binomial(global_wins + global_losses, p_global);
-  }
-  
-  // Individual endpoint likelihoods
-  if (death_wins_count + death_losses_count > 0) {
-    death_wins_count ~ binomial(death_wins_count + death_losses_count, p_death);
-  }
-  
-  if (amb_wins_count + amb_losses_count > 0) {
-    amb_wins_count ~ binomial(amb_wins_count + amb_losses_count, p_amb);
-  }
-  
-  if (days_wins_count + days_losses_count > 0) {
-    days_wins_count ~ binomial(days_wins_count + days_losses_count, p_days);
+  // Likelihood for the hierarchical win ratio
+  // Use proper U-statistic variance approximation
+  if (wins + losses > 0) {
+    // Observed win proportion among decided pairs
+    real observed_win_prop = wins / (wins + losses);
+    
+    // Variance approximation for U-statistic
+    // Use harmonic mean of sample sizes for variance calculation
+    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
+    real var_ustat = expected_win_prob * (1 - expected_win_prob) / n_eff;
+    
+    // Add small constant to prevent numerical issues
+    var_ustat += 1e-6;
+    
+    observed_win_prop ~ normal(expected_win_prob, sqrt(var_ustat));
   }
 }
 
 generated quantities {
-  // Calculate summary statistics
-  real death_favorable = death_wins_count;
-  real death_unfavorable = death_losses_count;
-  real death_neutral = n_pairs - death_favorable - death_unfavorable;
+  // Individual endpoint win ratios (for comparison with BuyseTest)
+  real death_wr = death_wins > 0 && death_losses > 0 ? 
+    death_wins / death_losses : 1.0;
   
-  real amb_favorable = amb_wins_count;
-  real amb_unfavorable = amb_losses_count;
-  real amb_neutral = n_pairs - amb_favorable - amb_unfavorable;
+  real amb_wr = amb_wins > 0 && amb_losses > 0 ? 
+    amb_wins / amb_losses : 1.0;
+    
+  real days_wr = days_wins > 0 && days_losses > 0 ? 
+    days_wins / days_losses : 1.0;
   
-  real days_favorable = days_wins_count;
-  real days_unfavorable = days_losses_count;
-  real days_neutral = n_pairs - days_favorable - days_unfavorable;
+  // Summary statistics
+  real total_wins = wins;
+  real total_losses = losses;
+  real total_ties = ties;
+  
+  real death_favorable = death_wins;
+  real death_unfavorable = death_losses;
+  real death_neutral = death_ties;
+  
+  real amb_favorable = amb_wins;
+  real amb_unfavorable = amb_losses;
+  real amb_neutral = amb_ties;
+  
+  real days_favorable = days_wins;
+  real days_unfavorable = days_losses;
+  real days_neutral = days_ties;
   
   // Net treatment benefit (delta)
-  real delta_death = (death_favorable - death_unfavorable) * 1.0 / n_pairs;
-  real delta_amb = (amb_favorable - amb_unfavorable) * 1.0 / n_pairs;
-  real delta_days = (days_favorable - days_unfavorable) * 1.0 / n_pairs;
-  real delta_global = (global_wins - global_losses) * 1.0 / n_pairs;
+  real delta = (wins - losses) / (n_control * n_treatment);
   
   // Probability of treatment benefit
-  real prob_benefit_death = wr_death > 1 ? 1 : 0;
-  real prob_benefit_amb = wr_amb > 1 ? 1 : 0;
-  real prob_benefit_days = wr_days > 1 ? 1 : 0;
-  real prob_benefit_global = wr_global > 1 ? 1 : 0;
+  real prob_benefit = wr > 1 ? 1 : 0;
 }
