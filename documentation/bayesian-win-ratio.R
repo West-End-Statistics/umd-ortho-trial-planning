@@ -57,16 +57,16 @@ bayesian_win_ratio <- function(data,
   )
 
   # Extract results
-  draws <- fit$draws(variables = c("wr", "death_wr", "amb_wr", "days_wr"))
+  draws <- fit$draws(variables = c("wr", "wr_death", "wr_amb", "wr_days"))
 
   # Create output similar to BuyseTest confint
   alpha <- 1 - level
 
   # Extract win ratios for each endpoint
   wr_global <- as_draws_matrix(draws)[, "wr"]
-  wr_death <- as_draws_matrix(draws)[, "death_wr"]
-  wr_amb <- as_draws_matrix(draws)[, "amb_wr"]
-  wr_days <- as_draws_matrix(draws)[, "days_wr"]
+  wr_death <- as_draws_matrix(draws)[, "wr_death"]
+  wr_amb <- as_draws_matrix(draws)[, "wr_amb"]
+  wr_days <- as_draws_matrix(draws)[, "wr_days"]
 
   # Create results dataframe
   results <- data.frame(
