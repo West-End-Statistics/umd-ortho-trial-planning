@@ -23,139 +23,46 @@ data {
 }
 
 transformed data {
-  // Compute hierarchical comparisons properly
-  // Each pair is decided at the first differentiating endpoint
+  // Use the exact same logic as BuyseTest hierarchical comparisons
+  // But calculate the final win ratio from the final hierarchical outcome
   
   real wins = 0;
   real losses = 0;
   real ties = 0;
   
-  // Hierarchical comparisons at different levels
-  real wins_amb_hier = 0;    // death → amb (stops at amb)
-  real losses_amb_hier = 0;
-  real ties_amb_hier = 0;
-  
-  real wins_days_hier = 0;   // amb → days (skips death)
-  real losses_days_hier = 0;
-  real ties_days_hier = 0;
-  
-  // Marginal endpoint statistics (for comparison with BuyseTest)
-  // These count ALL comparisons for each endpoint independently
-  real death_wins_marginal = 0;
-  real death_losses_marginal = 0;
-  real death_ties_marginal = 0;
-  
-  real amb_wins_marginal = 0;
-  real amb_losses_marginal = 0;
-  real amb_ties_marginal = 0;
-  
-  real days_wins_marginal = 0;
-  real days_losses_marginal = 0;
-  real days_ties_marginal = 0;
-  
-  // Compute all pairwise comparisons
+  // Compute all pairwise comparisons hierarchically
   for (i in 1:n_control) {
     for (j in 1:n_treatment) {
-      // MARGINAL COMPARISONS (independent for each endpoint)
-      // Death comparisons
-      if (death_control[i] == 1 && death_treatment[j] == 0) {
-        death_wins_marginal += 1;
-      } else if (death_control[i] == 0 && death_treatment[j] == 1) {
-        death_losses_marginal += 1;
-      } else {
-        death_ties_marginal += 1;
-      }
-      
-      // Ambulatory comparisons (independent of death)
       real amb_diff = amb_treatment[j] - amb_control[i];
-      if (amb_diff > amb_threshold) {
-        amb_wins_marginal += 1;
-      } else if (amb_diff < -amb_threshold) {
-        amb_losses_marginal += 1;
-      } else {
-        amb_ties_marginal += 1;
-      }
-      
-      // Days comparisons (independent of death and ambulatory)
       real days_diff = days_treatment[j] - days_control[i];
-      if (days_diff > days_threshold) {
-        days_wins_marginal += 1;
-      } else if (days_diff < -days_threshold) {
-        days_losses_marginal += 1;
-      } else {
-        days_ties_marginal += 1;
-      }
       
-      // HIERARCHICAL COMPARISON (for global win ratio)
-      // First check death (binary, lower is better)
+      // Hierarchical comparison: death → ambulatory → days
       if (death_control[i] == 1 && death_treatment[j] == 0) {
-        // Control died, treatment didn't -> treatment wins
+        // Control died, treatment didn't → treatment wins
         wins += 1;
       } else if (death_control[i] == 0 && death_treatment[j] == 1) {
-        // Treatment died, control didn't -> control wins (loss for treatment)
+        // Treatment died, control didn't → control wins
         losses += 1;
       } else {
-        // Tie on death, check ambulatory status
-        if (amb_diff > amb_threshold) {
+        // Tie on death, check ambulatory
+        if (amb_diff >= amb_threshold) {
           // Treatment has better ambulatory status
           wins += 1;
-        } else if (amb_diff < -amb_threshold) {
+        } else if (amb_diff <= -amb_threshold) {
           // Control has better ambulatory status
           losses += 1;
         } else {
-          // Tie on ambulatory, check days at home
-          if (days_diff > days_threshold) {
+          // Tie on ambulatory, check days
+          if (days_diff >= days_threshold) {
             // Treatment has more days at home
             wins += 1;
-          } else if (days_diff < -days_threshold) {
+          } else if (days_diff <= -days_threshold) {
             // Control has more days at home
             losses += 1;
           } else {
             // Complete tie
             ties += 1;
           }
-        }
-      }
-      
-      // AMBULATION HIERARCHICAL COMPARISON (death → amb, stops at amb)
-      if (death_control[i] == 1 && death_treatment[j] == 0) {
-        // Control died, treatment didn't -> treatment wins
-        wins_amb_hier += 1;
-      } else if (death_control[i] == 0 && death_treatment[j] == 1) {
-        // Treatment died, control didn't -> control wins (loss for treatment)
-        losses_amb_hier += 1;
-      } else {
-        // Tie on death, check ambulatory status (final decision)
-        if (amb_diff > amb_threshold) {
-          // Treatment has better ambulatory status
-          wins_amb_hier += 1;
-        } else if (amb_diff < -amb_threshold) {
-          // Control has better ambulatory status
-          losses_amb_hier += 1;
-        } else {
-          // Tie on ambulatory (final tie)
-          ties_amb_hier += 1;
-        }
-      }
-      
-      // DAYS HIERARCHICAL COMPARISON (amb → days, skips death)
-      if (amb_diff > amb_threshold) {
-        // Treatment has better ambulatory status
-        wins_days_hier += 1;
-      } else if (amb_diff < -amb_threshold) {
-        // Control has better ambulatory status
-        losses_days_hier += 1;
-      } else {
-        // Tie on ambulatory, check days at home
-        if (days_diff > days_threshold) {
-          // Treatment has more days at home
-          wins_days_hier += 1;
-        } else if (days_diff < -days_threshold) {
-          // Control has more days at home
-          losses_days_hier += 1;
-        } else {
-          // Complete tie
-          ties_days_hier += 1;
         }
       }
     }
@@ -173,90 +80,27 @@ transformed data {
 parameters {
   // Log win ratio parameters
   real log_wr;           // Global hierarchical win ratio (death → amb → days)
-  real log_wr_amb_hier;  // Ambulation hierarchical win ratio (death → amb)
-  real log_wr_days_hier; // Days hierarchical win ratio (amb → days)
-  real log_wr_death;     // Death endpoint win ratio (marginal)
-  real log_wr_amb;       // Ambulatory endpoint win ratio (marginal)
-  real log_wr_days;      // Days endpoint win ratio (marginal)
 }
 
 transformed parameters {
   // Win ratios (always positive)
   real wr = exp(log_wr);
-  real wr_amb_hier = exp(log_wr_amb_hier);
-  real wr_days_hier = exp(log_wr_days_hier);
-  real wr_death = exp(log_wr_death);
-  real wr_amb = exp(log_wr_amb);
-  real wr_days = exp(log_wr_days);
   
   // Expected win probabilities using inv_logit for stability
   real expected_win_prob = inv_logit(log_wr);
-  real expected_win_prob_amb_hier = inv_logit(log_wr_amb_hier);
-  real expected_win_prob_days_hier = inv_logit(log_wr_days_hier);
-  real expected_win_prob_death = inv_logit(log_wr_death);
-  real expected_win_prob_amb = inv_logit(log_wr_amb);
-  real expected_win_prob_days = inv_logit(log_wr_days);
 }
 
 model {
   // Priors
   log_wr ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_amb_hier ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_days_hier ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_death ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_amb ~ normal(prior_mean_log_wr, prior_sd_log_wr);
-  log_wr_days ~ normal(prior_mean_log_wr, prior_sd_log_wr);
   
-  // Likelihood for the global hierarchical win ratio (death → amb → days)
+  // Likelihood for the hierarchical win ratio
   if (wins + losses > 0) {
     real observed_win_prop = wins / (wins + losses);
     real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
     real var_ustat = expected_win_prob * (1 - expected_win_prob) / n_eff;
     var_ustat += 1e-6;
     observed_win_prop ~ normal(expected_win_prob, sqrt(var_ustat));
-  }
-  
-  // Likelihood for the ambulation hierarchical win ratio (death → amb)
-  if (wins_amb_hier + losses_amb_hier > 0) {
-    real observed_win_prop = wins_amb_hier / (wins_amb_hier + losses_amb_hier);
-    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-    real var_ustat = expected_win_prob_amb_hier * (1 - expected_win_prob_amb_hier) / n_eff;
-    var_ustat += 1e-6;
-    observed_win_prop ~ normal(expected_win_prob_amb_hier, sqrt(var_ustat));
-  }
-  
-  // Likelihood for the days hierarchical win ratio (amb → days)
-  if (wins_days_hier + losses_days_hier > 0) {
-    real observed_win_prop = wins_days_hier / (wins_days_hier + losses_days_hier);
-    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-    real var_ustat = expected_win_prob_days_hier * (1 - expected_win_prob_days_hier) / n_eff;
-    var_ustat += 1e-6;
-    observed_win_prop ~ normal(expected_win_prob_days_hier, sqrt(var_ustat));
-  }
-  
-  // Likelihoods for individual endpoints (marginal)
-  if (death_wins_marginal + death_losses_marginal > 0) {
-    real death_obs_prop = death_wins_marginal / (death_wins_marginal + death_losses_marginal);
-    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-    real var_ustat = expected_win_prob_death * (1 - expected_win_prob_death) / n_eff;
-    var_ustat += 1e-6;
-    death_obs_prop ~ normal(expected_win_prob_death, sqrt(var_ustat));
-  }
-  
-  if (amb_wins_marginal + amb_losses_marginal > 0) {
-    real amb_obs_prop = amb_wins_marginal / (amb_wins_marginal + amb_losses_marginal);
-    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-    real var_ustat = expected_win_prob_amb * (1 - expected_win_prob_amb) / n_eff;
-    var_ustat += 1e-6;
-    amb_obs_prop ~ normal(expected_win_prob_amb, sqrt(var_ustat));
-  }
-  
-  if (days_wins_marginal + days_losses_marginal > 0) {
-    real days_obs_prop = days_wins_marginal / (days_wins_marginal + days_losses_marginal);
-    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-    real var_ustat = expected_win_prob_days * (1 - expected_win_prob_days) / n_eff;
-    var_ustat += 1e-6;
-    days_obs_prop ~ normal(expected_win_prob_days, sqrt(var_ustat));
   }
 }
 
@@ -266,38 +110,9 @@ generated quantities {
   real total_losses = losses;
   real total_ties = ties;
   
-  // Hierarchical summary statistics
-  real amb_hier_wins = wins_amb_hier;
-  real amb_hier_losses = losses_amb_hier;
-  real amb_hier_ties = ties_amb_hier;
-  
-  real days_hier_wins = wins_days_hier;
-  real days_hier_losses = losses_days_hier;
-  real days_hier_ties = ties_days_hier;
-  
-  // Marginal summary statistics (for comparison with BuyseTest)
-  real death_favorable = death_wins_marginal;
-  real death_unfavorable = death_losses_marginal;
-  real death_neutral = death_ties_marginal;
-  
-  real amb_favorable = amb_wins_marginal;
-  real amb_unfavorable = amb_losses_marginal;
-  real amb_neutral = amb_ties_marginal;
-  
-  real days_favorable = days_wins_marginal;
-  real days_unfavorable = days_losses_marginal;
-  real days_neutral = days_ties_marginal;
-  
-  // Net treatment benefit (delta) - hierarchical
+  // Net treatment benefit (delta)
   real delta = (wins - losses) / (n_control * n_treatment);
-  real delta_amb_hier = (wins_amb_hier - losses_amb_hier) / (n_control * n_treatment);
-  real delta_days_hier = (wins_days_hier - losses_days_hier) / (n_control * n_treatment);
   
   // Probability of treatment benefit
   real prob_benefit = wr > 1 ? 1 : 0;
-  real prob_benefit_amb_hier = wr_amb_hier > 1 ? 1 : 0;
-  real prob_benefit_days_hier = wr_days_hier > 1 ? 1 : 0;
-  real prob_benefit_death = wr_death > 1 ? 1 : 0;
-  real prob_benefit_amb = wr_amb > 1 ? 1 : 0;
-  real prob_benefit_days = wr_days > 1 ? 1 : 0;
 }

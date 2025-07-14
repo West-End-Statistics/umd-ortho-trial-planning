@@ -22,7 +22,8 @@ bayesian_win_ratio <- function(data,
                                chains = 4,
                                iter = 2000,
                                warmup = 1000,
-                               cores = 2) {
+                               cores = 2,
+                               return_fit = FALSE) {
   # Split data by treatment arm
   control_data <- data[data$arm == "placebo", ]
   treatment_data <- data[data$arm == "active", ]
@@ -56,75 +57,41 @@ bayesian_win_ratio <- function(data,
     refresh = 0
   )
 
+  if (return_fit) {
+    return(fit)
+  }
   # Extract results
-  draws <- fit$draws(variables = c("wr", "wr_amb_hier", "wr_days_hier", "wr_death", "wr_amb", "wr_days"))
+  draws <- fit$draws(variables = c("wr"))
 
   # Create output similar to BuyseTest confint
   alpha <- 1 - level
 
-  # Extract win ratios for each endpoint
+  # Extract global win ratio
   wr_global <- as_draws_matrix(draws)[, "wr"]
-  wr_amb_hier <- as_draws_matrix(draws)[, "wr_amb_hier"]
-  wr_days_hier <- as_draws_matrix(draws)[, "wr_days_hier"]
-  wr_death <- as_draws_matrix(draws)[, "wr_death"]
-  wr_amb <- as_draws_matrix(draws)[, "wr_amb"]
-  wr_days <- as_draws_matrix(draws)[, "wr_days"]
 
-  # Create results dataframe
+  # Create results dataframe with only global win ratio
   results <- data.frame(
-    estimate = c(mean(wr_death), mean(wr_amb), mean(wr_days)),
-    se = c(sd(wr_death), sd(wr_amb), sd(wr_days)),
-    lower.ci = c(
-      quantile(wr_death, alpha / 2),
-      quantile(wr_amb, alpha / 2),
-      quantile(wr_days, alpha / 2)
-    ),
-    upper.ci = c(
-      quantile(wr_death, 1 - alpha / 2),
-      quantile(wr_amb, 1 - alpha / 2),
-      quantile(wr_days, 1 - alpha / 2)
-    ),
-    null = c(1, 1, 1),
-    p.value = c(
-      mean(wr_death <= 1),
-      mean(wr_amb <= 1),
-      mean(wr_days <= 1)
-    )
+    estimate = mean(wr_global),
+    se = sd(wr_global),
+    lower.ci = quantile(wr_global, alpha / 2),
+    upper.ci = quantile(wr_global, 1 - alpha / 2),
+    null = 1,
+    p.value = mean(wr_global <= 1)
   )
 
-  rownames(results) <- c("died", "amb_status_numeric_t1", "days_at_home_t7")
+  rownames(results) <- c("global")
 
   # Add attributes
   attr(results, "method") <- "Bayesian"
   attr(results, "level") <- level
   attr(results, "chains") <- chains
   attr(results, "fit") <- fit
-  attr(results, "global_wr") <- list(
-    estimate = mean(wr_global),
-    se = sd(wr_global),
-    lower.ci = quantile(wr_global, alpha / 2),
-    upper.ci = quantile(wr_global, 1 - alpha / 2),
-    p.value = mean(wr_global <= 1)
-  )
-  attr(results, "amb_hier_wr") <- list(
-    estimate = mean(wr_amb_hier),
-    se = sd(wr_amb_hier),
-    lower.ci = quantile(wr_amb_hier, alpha / 2),
-    upper.ci = quantile(wr_amb_hier, 1 - alpha / 2),
-    p.value = mean(wr_amb_hier <= 1)
-  )
-  attr(results, "days_hier_wr") <- list(
-    estimate = mean(wr_days_hier),
-    se = sd(wr_days_hier),
-    lower.ci = quantile(wr_days_hier, alpha / 2),
-    upper.ci = quantile(wr_days_hier, 1 - alpha / 2),
-    p.value = mean(wr_days_hier <= 1)
-  )
 
   return(results)
 }
 
 # Example usage
+set.seed(123)
 d <- simulate_trial(n_per_arm = 100)
 
 # Classical BuyseTest approach
@@ -141,15 +108,10 @@ classical_out <- confint(bt_out, statistic = "winRatio", level = .95)
 
 # Bayesian approach
 bayesian_out <- bayesian_win_ratio(d, cores = 2)
+bayesian_out_model <- bayesian_win_ratio(d, cores = 2, return_fit = TRUE)
 
 # Compare results
 print("Classical Win Ratio Results:")
 print(classical_out)
-print("\nBayesian Win Ratio Results:")
+print("\nBayesian Global Win Ratio Results:")
 print(bayesian_out)
-print("\nBayesian Global Win Ratio (death → amb → days):")
-print(attr(bayesian_out, "global_wr"))
-print("\nBayesian Ambulation Hierarchical Win Ratio (death → amb):")
-print(attr(bayesian_out, "amb_hier_wr"))
-print("\nBayesian Days Hierarchical Win Ratio (amb → days):")
-print(attr(bayesian_out, "days_hier_wr"))

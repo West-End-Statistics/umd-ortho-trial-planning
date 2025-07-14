@@ -6,4 +6,8 @@ site/
 inst/stanmod/meta
 
 .cache/*
+.claude/*
 CLAUDE.md
+inst/stanmod/bayesian_win_ratio
+
+*.pdf
