@@ -57,13 +57,15 @@ bayesian_win_ratio <- function(data,
   )
 
   # Extract results
-  draws <- fit$draws(variables = c("wr", "wr_death", "wr_amb", "wr_days"))
+  draws <- fit$draws(variables = c("wr", "wr_amb_hier", "wr_days_hier", "wr_death", "wr_amb", "wr_days"))
 
   # Create output similar to BuyseTest confint
   alpha <- 1 - level
 
   # Extract win ratios for each endpoint
   wr_global <- as_draws_matrix(draws)[, "wr"]
+  wr_amb_hier <- as_draws_matrix(draws)[, "wr_amb_hier"]
+  wr_days_hier <- as_draws_matrix(draws)[, "wr_days_hier"]
   wr_death <- as_draws_matrix(draws)[, "wr_death"]
   wr_amb <- as_draws_matrix(draws)[, "wr_amb"]
   wr_days <- as_draws_matrix(draws)[, "wr_days"]
@@ -104,6 +106,20 @@ bayesian_win_ratio <- function(data,
     upper.ci = quantile(wr_global, 1 - alpha / 2),
     p.value = mean(wr_global <= 1)
   )
+  attr(results, "amb_hier_wr") <- list(
+    estimate = mean(wr_amb_hier),
+    se = sd(wr_amb_hier),
+    lower.ci = quantile(wr_amb_hier, alpha / 2),
+    upper.ci = quantile(wr_amb_hier, 1 - alpha / 2),
+    p.value = mean(wr_amb_hier <= 1)
+  )
+  attr(results, "days_hier_wr") <- list(
+    estimate = mean(wr_days_hier),
+    se = sd(wr_days_hier),
+    lower.ci = quantile(wr_days_hier, alpha / 2),
+    upper.ci = quantile(wr_days_hier, 1 - alpha / 2),
+    p.value = mean(wr_days_hier <= 1)
+  )
 
   return(results)
 }
@@ -131,5 +147,9 @@ print("Classical Win Ratio Results:")
 print(classical_out)
 print("\nBayesian Win Ratio Results:")
 print(bayesian_out)
-print("\nBayesian Global Win Ratio:")
+print("\nBayesian Global Win Ratio (death → amb → days):")
 print(attr(bayesian_out, "global_wr"))
+print("\nBayesian Ambulation Hierarchical Win Ratio (death → amb):")
+print(attr(bayesian_out, "amb_hier_wr"))
+print("\nBayesian Days Hierarchical Win Ratio (amb → days):")
+print(attr(bayesian_out, "days_hier_wr"))

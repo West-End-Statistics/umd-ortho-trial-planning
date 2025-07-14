@@ -1,4 +1,4 @@
-#!/usr/bin/env Rscript
+#!/usr/bin/env script
 
 # Script to render interim-analysis.qmd with different prior_std values
 # Creates output directory with date and parameter values in filename
