@@ -26,9 +26,9 @@ transformed data {
   // Use the exact same logic as BuyseTest hierarchical comparisons
   // But calculate the final win ratio from the final hierarchical outcome
   
-  real wins = 0;
-  real losses = 0;
-  real ties = 0;
+  int wins = 0;
+  int losses = 0;
+  int ties = 0;
   
   // Compute all pairwise comparisons hierarchically
   for (i in 1:n_control) {
@@ -71,6 +71,12 @@ transformed data {
   // Total comparisons
   real total_comparisons = n_control * n_treatment;
   
+  // Effective sample size for U-statistics (accounts for correlation)
+  real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
+  real scale_factor = n_eff / total_comparisons;
+  int effective_successes = to_int(round(wins * scale_factor));
+  int effective_trials = to_int(round((wins + losses) * scale_factor));
+  
   // Proportions
   real win_prop = wins / total_comparisons;
   real loss_prop = losses / total_comparisons;
@@ -94,13 +100,9 @@ model {
   // Priors
   log_wr ~ normal(prior_mean_log_wr, prior_sd_log_wr);
   
-  // Likelihood for the hierarchical win ratio
-  if (wins + losses > 0) {
-    real observed_win_prop = wins / (wins + losses);
-    real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-    real var_ustat = expected_win_prob * (1 - expected_win_prob) / n_eff;
-    var_ustat += 1e-6;
-    observed_win_prop ~ normal(expected_win_prob, sqrt(var_ustat));
+  // Likelihood using binomial with effective sample size to account for correlation
+  if (effective_trials > 0) {
+    effective_successes ~ binomial(effective_trials, expected_win_prob);
   }
 }
 
@@ -111,7 +113,7 @@ generated quantities {
   real total_ties = ties;
   
   // Net treatment benefit (delta)
-  real delta = (wins - losses) / (n_control * n_treatment);
+  real delta = (wins - losses) * 1.0 / (n_control * n_treatment);
   
   // Probability of treatment benefit
   real prob_benefit = wr > 1 ? 1 : 0;

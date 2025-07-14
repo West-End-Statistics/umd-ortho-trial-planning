@@ -107,7 +107,7 @@ bt_out <- BuyseTest(
 classical_out <- confint(bt_out, statistic = "winRatio", level = .95)
 
 # Bayesian approach
-bayesian_out <- bayesian_win_ratio(d, cores = 2)
+bayesian_out <- bayesian_win_ratio(d, cores = 2, prior_sd_log_wr = 1)
 bayesian_out_model <- bayesian_win_ratio(d, cores = 2, return_fit = TRUE)
 
 # Compare results
