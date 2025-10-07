@@ -115,3 +115,100 @@ print("Classical Win Ratio Results:")
 print(classical_out)
 print("\nBayesian Global Win Ratio Results:")
 print(bayesian_out)
+
+# Bradley-Terry model using bpcs package
+library(bpcs)
+
+# Transform data for Bradley-Terry model
+control_data <- d[d$arm == "placebo", ]
+treatment_data <- d[d$arm == "active", ]
+
+# Create pairwise comparison data following hierarchical logic
+# Only include non-tied comparisons for Bradley-Terry
+d_bpc <- data.frame()
+
+for (i in 1:nrow(control_data)) {
+  for (j in 1:nrow(treatment_data)) {
+    amb_diff <- treatment_data$amb_status_numeric[j] - control_data$amb_status_numeric[i]
+    days_diff <- treatment_data$days_at_home[j] - control_data$days_at_home[i]
+
+    # Determine outcome using hierarchical logic (death -> ambulatory -> days)
+    y <- NA
+    if (control_data$died[i] == 1 && treatment_data$died[j] == 0) {
+      y <- 1 # Treatment wins
+    } else if (control_data$died[i] == 0 && treatment_data$died[j] == 1) {
+      y <- 0 # Control wins
+    } else {
+      # Tie on death, check ambulatory
+      if (amb_diff >= 1) {
+        y <- 1 # Treatment wins
+      } else if (amb_diff <= -1) {
+        y <- 0 # Control wins
+      } else {
+        # Tie on ambulatory, check days
+        if (days_diff >= 7) {
+          y <- 1 # Treatment wins
+        } else if (days_diff <= -7) {
+          y <- 0 # Control wins
+        } else {
+          y <- NA # Skip ties for Bradley-Terry
+        }
+      }
+    }
+
+    # Only add non-tied comparisons
+    if (!is.na(y)) {
+      d_bpc <- rbind(d_bpc, data.frame(
+        player0 = "control",
+        player1 = "treatment",
+        y = y
+      ))
+    }
+  }
+}
+
+print(paste("Bradley-Terry dataset has", nrow(d_bpc), "comparisons"))
+print(paste("Wins:", sum(d_bpc$y == 1), "Losses:", sum(d_bpc$y == 0)))
+print("Data structure:")
+print(head(d_bpc))
+
+# Fit Bradley-Terry model (only if we have data)
+if (nrow(d_bpc) > 0) {
+  m <- bpc(
+    data = d_bpc,
+    player0 = "player0",
+    player1 = "player1",
+    result_column = "y",
+    model_type = "bt",
+    solve_ties = "none", # No ties now since we excluded them
+    show_chain_messages = FALSE,
+    iter = 1000,  # Reduce iterations for faster testing
+    warmup = 500
+  )
+
+  # Extract results and convert to win ratio
+  bt_summary <- summary(m)
+  print("\nBradley-Terry Model Results:")
+  print(bt_summary)
+  
+  # Calculate win ratio from Bradley-Terry coefficients
+  # Win ratio = exp(treatment_coef - control_coef)
+  coefs <- get_parameters(m, format = "samples")
+  treatment_effect <- coefs$lambda_treatment - coefs$lambda_control
+  bt_win_ratio <- exp(treatment_effect)
+
+  bt_results <- data.frame(
+    estimate = mean(bt_win_ratio),
+    se = sd(bt_win_ratio),
+    lower.ci = quantile(bt_win_ratio, 0.025),
+    upper.ci = quantile(bt_win_ratio, 0.975),
+    null = 1,
+    p.value = mean(bt_win_ratio <= 1)
+  )
+  rownames(bt_results) <- "bradley_terry"
+
+  print("\nBradley-Terry Win Ratio:")
+  print(bt_results)
+} else {
+  print("No non-tied comparisons for Bradley-Terry model")
+}

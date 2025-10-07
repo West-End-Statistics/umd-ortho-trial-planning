@@ -71,11 +71,7 @@ transformed data {
   // Total comparisons
   real total_comparisons = n_control * n_treatment;
   
-  // Effective sample size for U-statistics (accounts for correlation)
-  real n_eff = 2.0 * n_control * n_treatment / (n_control + n_treatment);
-  real scale_factor = n_eff / total_comparisons;
-  int effective_successes = to_int(round(wins * scale_factor));
-  int effective_trials = to_int(round((wins + losses) * scale_factor));
+  // No need to store individual comparisons for beta-binomial approach
   
   // Proportions
   real win_prop = wins / total_comparisons;
@@ -84,8 +80,8 @@ transformed data {
 }
 
 parameters {
-  // Log win ratio parameters
-  real log_wr;           // Global hierarchical win ratio (death → amb → days)
+  // Treatment effect only
+  real log_wr;                        // Global hierarchical win ratio (death → amb → days)
 }
 
 transformed parameters {
@@ -100,9 +96,17 @@ model {
   // Priors
   log_wr ~ normal(prior_mean_log_wr, prior_sd_log_wr);
   
-  // Likelihood using binomial with effective sample size to account for correlation
-  if (effective_trials > 0) {
-    effective_successes ~ binomial(effective_trials, expected_win_prob);
+  // Normal likelihood with proper U-statistic variance (more precise than simple effective n)
+  if (wins + losses > 0) {
+    real observed_win_prop = wins * 1.0 / (wins + losses);
+    
+    // Proper U-statistic variance formula accounting for correlation
+    real harmonic_mean = 2.0 * n_control * n_treatment / (n_control + n_treatment);
+    real variance_factor = 1.0 + (n_control - 1) / (2.0 * n_control) + (n_treatment - 1) / (2.0 * n_treatment);
+    real ustat_var = expected_win_prob * (1 - expected_win_prob) * variance_factor / harmonic_mean;
+    ustat_var += 1e-8;  // Numerical stability
+    
+    observed_win_prop ~ normal(expected_win_prob, sqrt(ustat_var));
   }
 }
 
