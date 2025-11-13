@@ -11,3 +11,5 @@ CLAUDE.md
 inst/stanmod/bayesian_win_ratio
 
 *.pdf
+inst/doc
+docs
