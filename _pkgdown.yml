@@ -1,0 +1,5 @@
+url: https://yourusername.github.io/umd-ortho-trial-planning/
+
+template:
+  bootstrap: 5
+  bootswatch: cosmo

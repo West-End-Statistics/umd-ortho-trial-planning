@@ -1,3 +1,24 @@
+#' Estimate Win Ratio and Component Outcomes for Trial Dataset
+#'
+#' Calculates win ratio using BuyseTest with hierarchical endpoints (death,
+#' ambulatory status, days at home) along with univariate analyses.
+#'
+#' @param d Data frame. Trial dataset with columns: arm, died, amb_status_numeric,
+#'   days_at_home, ambulation_status.
+#' @param alpha Numeric. Significance level (default: 0.05).
+#' @param amb_status_thresh Numeric. Threshold for ambulatory status (default: 1).
+#' @param days_at_home_thresh Numeric. Threshold for days at home (default: 7).
+#' @param two_sided Logical. Whether to use two-sided tests (default: TRUE).
+#'
+#' @return Data frame with win ratio estimates, standard errors, and confidence intervals
+#'   for each outcome and the overall win ratio.
+#'
+#' @export
+#' @importFrom BuyseTest BuyseTest.options BuyseTest confint
+#' @importFrom tibble as_tibble
+#' @importFrom dplyr rename bind_rows
+#' @importFrom broom tidy
+#' @importFrom MASS polr
 estimate_dataset <- function(d,
                              alpha = .05,
                              amb_status_thresh = 1,
@@ -7,16 +28,16 @@ estimate_dataset <- function(d,
     1 - alpha,
     1 - alpha * 2
   )
-  old_options <- BuyseTest.options()
-  BuyseTest.options(
+  old_options <- BuyseTest::BuyseTest.options()
+  BuyseTest::BuyseTest.options(
     conf.level = confint_width
     # order.Hprojection = 2
   )
 
   on.exit(
-    do.call(BuyseTest.options, args = old_options)
+    do.call(BuyseTest::BuyseTest.options, args = old_options)
   )
-  bt_out <- BuyseTest(
+  bt_out <- BuyseTest::BuyseTest(
     arm ~ bin(died, operator = "<0") +
       cont(amb_status_numeric, threshold = amb_status_thresh) +
       cont(days_at_home, threshold = days_at_home_thresh),
@@ -27,7 +48,7 @@ estimate_dataset <- function(d,
   )
 
   winratio_out <- tibble::as_tibble(
-    confint(bt_out, statistic = "winRatio", level = confint_width),
+    BuyseTest::confint(bt_out, statistic = "winRatio", level = confint_width),
     rownames = "term"
   )
   winratio_out$null <- NULL
@@ -136,6 +157,22 @@ check_if_successful <- function(
   out
 }
 
+#' Evaluate Trial Dataset for Treatment Success
+#'
+#' Performs win ratio analysis and determines if treatment success criteria are met
+#' based on specified alpha level and comparison type.
+#'
+#' @param d Data frame. Trial dataset.
+#' @param alpha Numeric. Significance level (default: 0.05).
+#' @param amb_status_thresh Numeric. Threshold for ambulatory status (default: 1).
+#' @param days_at_home_thresh Numeric. Threshold for days at home (default: 7).
+#' @param alpha_comparison Character. Type of comparison: "both" (two-sided),
+#'   "treatment" (one-sided favoring treatment), or "control" (one-sided favoring control).
+#' @param include_estimates Logical. Whether to include full estimates (default: TRUE).
+#'
+#' @return Data frame with success indicators and optionally full estimates.
+#'
+#' @export
 evaluate_dataset <- function(
     d,
     alpha = .05,

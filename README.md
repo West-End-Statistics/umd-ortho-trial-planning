@@ -1,9 +1,11 @@
 # Orthopedic Trial Planing
 
 
+
+
 ## Running Interim Analysis
 
-This describes the requirements for re-running the code in "documentation/interim-analysis.qmd"
+This describes the requirements for re-running the code in "vignettes/interim-analysis.qmd"
 
 ### Dependencies
 
@@ -16,26 +18,21 @@ library(cmdstanr)
 install_cmdstan(cores = 2)
 ```
 
-```r
-other_deps <- c("broom", "BuyseTest", "dplyr", "flextable", "forcats", 
-"furrr", "ggalluvial", "ggplot2", "gtsummary", "here", "MASS", 
-"mvtnorm", "purrr", "rmarkdown", "tibble", "tidyr")
-install.packages(other_deps)
-```
-
-Alternatively, you may run:
+You can then install the `umdorthotrialplanning` package with the `remotes` package:
 
 ```r
-renv::restore()
+remotes::install_github("West-End-Statistics/umd-ortho-trial-planning@vitallish/issue10")
 ```
-
-Which should restore all required packages (you must still run `install_cmdstan`). The interim analysis document contains some parameters that may be modified. The render_interim_analysis.R script runs two versions of the report - one for either 0.25 or .5 as the prior_std.
-
 
 ## Orthopedic Trial Planning Application
 
 
 ## Changes
+
+### 2025-11-13
+
+- moved app to inst/ folder for later use
+
 ### 2024-09-25
 - Added ability to add missing outcomes to data - % missing per outcome.
 

@@ -1,0 +1,47 @@
+Package: umdorthotrialplanning
+Type: Package
+Title: Orthopedic Clinical Trial Planning Using Win Ratio Methodology
+Version: 0.1.0
+Authors@R: c(
+    person("Maintainer", "Name", email = "maintainer@example.com", role = c("aut", "cre"))
+    )
+Description: Statistical analysis tools for orthopedic clinical trial planning,
+    focusing on win ratio methodology and Bayesian analysis. Includes functions
+    for NORTA-based synthetic data generation, hierarchical endpoint analysis
+    (death, ambulatory status, days at home), and power analysis via Monte Carlo
+    simulation. Also provides a Shiny web application for interactive trial design.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.1.0)
+Imports:
+    broom,
+    BuyseTest (>= 3.2.0),
+    cmdstanr,
+    dplyr,
+    ggplot2,
+    MASS,
+    mvtnorm,
+    shiny,
+    tibble,
+    gtsummary
+Suggests:
+    flextable,
+    forcats,
+    furrr,
+    ggalluvial,
+    knitr,
+    purrr,
+    quarto,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    tidyr
+URL: https://github.com/yourusername/umd-ortho-trial-planning
+BugReports: https://github.com/yourusername/umd-ortho-trial-planning/issues
+Roxygen: list(markdown = TRUE)
+Config/testthat/edition: 3
+Config/Needs/website: rmarkdown
+Additional_repositories:
+    https://stan-dev.r-universe.dev/

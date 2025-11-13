@@ -1,8 +1,12 @@
-FROM westendstatistics/rstats-dev:r4.5.1-20250701 AS development
+FROM westendstatistics/rstats-dev:r4.5.1-20251111 AS development
 
 USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y libwebp-dev && rm -rf /var/lib/apt/lists/*
+
 # RUN mkdir /opt/cmdstan
-# RUN Rscript -e "cmdstanr::install_cmdstan(dir = '/opt/cmdstan', cores = 2)"  
+# RUN Rscript -e "cmdstanr::install_cmdstan(dir = '/opt/cmdstan', cores = 2)"
 # ENV CMDSTAN="/opt/cmdstan"
 # RUN install2.r --error \
 #   BuyseTest ordinal shiny truncnorm WinRatio
@@ -18,4 +22,10 @@ USER root
 # RUN chown -R vscode:vscode /usr/lib/node_modules/@anthropic-ai/claude-code || true
 # RUN chmod +x /usr/bin/claude || true
 
+RUN install2.r --error \
+  devtools
 USER vscode
+
+RUN Rscript -e "dir.create(path = Sys.getenv('R_LIBS_USER'), showWarnings = FALSE, recursive = TRUE)"
+# RUN Rscript -e "dir.create(path = Sys.getenv('R_LIBS_USER'), showWarnings = FALSE, recursive = TRUE)"
+RUN   echo ".libPaths(Sys.getenv('R_LIBS_USER'))" >> /home/vscode/.Rprofile

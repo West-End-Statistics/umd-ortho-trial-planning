@@ -1,3 +1,42 @@
+#' Simulate Clinical Trial Data Using NORTA Methodology
+#'
+#' Generates synthetic patient data for a single trial arm using the NORTA
+#' (Normal-to-Anything) correlation structure. Simulates hierarchical outcomes
+#' including survival, days at home, and ambulatory status with configurable
+#' correlation and missingness.
+#'
+#' @param n Integer. Number of subjects to simulate.
+#' @param arm Character. Trial arm, either "placebo" or "active".
+#' @param outcome_correlation Numeric. Correlation coefficient between outcomes (default: 0).
+#' @param survival_prob Numeric vector of length 2. Survival probabilities for
+#'   placebo and active arms (default: c(0.85, 0.90)).
+#' @param days_at_home_mean Numeric vector of length 2. Mean days at home for
+#'   placebo and active arms (default: c(67, 78)).
+#' @param days_at_home_sd Numeric vector of length 2. Standard deviation of days
+#'   at home for both arms (default: c(20, 20)).
+#' @param placebo_amb_status Numeric vector of length 3. Ambulatory status proportions
+#'   for placebo arm (default: c(0.07, 0.37, 0.34)).
+#' @param amb_status_latent_shift Numeric. Latent shift for ambulatory status in
+#'   active arm (default: 0.2).
+#' @param survival_missing Numeric. Proportion of missing survival data (default: 0).
+#' @param days_at_home_missing Numeric. Proportion of missing days at home data (default: 0).
+#' @param amb_status_missing Numeric. Proportion of missing ambulatory status data (default: 0).
+#'
+#' @return A data frame with columns:
+#'   \item{died}{Binary indicator of death (0 = survived, 1 = died)}
+#'   \item{days_at_home}{Integer days at home (1-121)}
+#'   \item{ambulation_status}{Ordered factor of ambulatory status}
+#'   \item{amb_status_numeric}{Numeric version of ambulatory status}
+#'
+#' @export
+#' @importFrom mvtnorm rmvnorm
+#'
+#' @examples
+#' # Simulate 100 placebo patients
+#' placebo_data <- simulate_data(n = 100, arm = "placebo")
+#'
+#' # Simulate 100 active arm patients with correlation
+#' active_data <- simulate_data(n = 100, arm = "active", outcome_correlation = 0.3)
 simulate_data <- function(
     n,
     arm = c("placebo", "active"),
@@ -64,6 +103,16 @@ simulate_data <- function(
   out
 }
 
+#' Create Custom Outcome Correlation Matrix
+#'
+#' Helper function to create a correlation vector for outcomes.
+#'
+#' @param died_daysathome Numeric. Correlation between death and days at home (default: 0).
+#' @param died_ambulation Numeric. Correlation between death and ambulation (default: 0).
+#' @param days_ambulation Numeric. Correlation between days at home and ambulation (default: 0).
+#'
+#' @return Numeric vector of length 6 with correlation values.
+#' @export
 custom_outcome_corr <- function(died_daysathome = 0, died_ambulation = 0, days_ambulation = 0) {
   c(
     died_daysathome,
