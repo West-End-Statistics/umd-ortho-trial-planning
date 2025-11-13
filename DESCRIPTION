@@ -43,3 +43,5 @@ BugReports: https://github.com/yourusername/umd-ortho-trial-planning/issues
 Roxygen: list(markdown = TRUE)
 Config/testthat/edition: 3
 Config/Needs/website: rmarkdown
+Additional_repositories:
+    https://stan-dev.r-universe.dev/
