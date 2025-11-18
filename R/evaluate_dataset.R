@@ -112,6 +112,22 @@ estimate_dataset <- function(d,
 }
 
 
+#' Check if Trial Results Meet Success Criteria
+#'
+#' Determines which outcomes meet statistical significance based on p-values and
+#' effect direction relative to comparison thresholds.
+#'
+#' @param tidy_estimates Data frame. Tidied estimates from \code{\link{estimate_dataset}}.
+#' @param alpha Numeric. Significance level (default: 0.05).
+#' @param alpha_comparison Character. Type of comparison: "both" (two-sided),
+#'   "treatment" (one-sided favoring treatment), or "control" (one-sided favoring control).
+#' @param add_to_df Logical. If TRUE, adds "win" column to data frame; if FALSE,
+#'   returns named logical vector (default: TRUE).
+#'
+#' @return Either data frame with added "win" column or named logical vector
+#'   indicating which outcomes met success criteria.
+#'
+#' @keywords internal
 check_if_successful <- function(
     tidy_estimates,
     alpha = .05,

@@ -1,9 +1,9 @@
 Package: umdorthotrialplanning
 Type: Package
 Title: Orthopedic Clinical Trial Planning Using Win Ratio Methodology
-Version: 0.2.0
+Version: 0.2.1
 Authors@R: c(
-    person("Maintainer", "Name", email = "maintainer@example.com", role = c("aut", "cre"))
+    person("Vitaly", "Druker", email = "vitaly@westendstats.com", role = c("aut", "cre"))
     )
 Description: Statistical analysis tools for orthopedic clinical trial planning,
     focusing on win ratio methodology and Bayesian analysis. Includes functions
