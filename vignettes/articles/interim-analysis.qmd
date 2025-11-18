@@ -33,156 +33,9 @@ if (!"params" %in% ls()) {
 ```
 
 ```{r}
-make_stan_data <- function(x, prior_mean = 0, prior_std = 1) {
-  list(
-    # transformations based on u - statistic
-    win_ratio = log(x$estimate),
-    win_ratio_ste = x$std.error / x$estimate,
-    prior_mean = prior_mean,
-    prior_std = prior_std
-  )
-}
-
-hit_success <- function(x) {
-  data.frame(
-    hd_superiority1 = x$pr_treatment_benefit > .99,
-    hd_superiority2 = x$pr_wr_15 > .90,
-    hd_inferiority = x$pr_treatment_benefit < .01,
-    hd_equivalence =
-      x$pr_equivalence_hd > .9 &
-        x$pr_treatment_benefit > 1 / 3 &
-        x$pr_treatment_benefit < 2 / 3,
-    hd_equivalencesuperiority =
-      x$pr_equivalence_hd > .9 &
-        x$pr_treatment_benefit > 2 / 3,
-    hd_equivalenceinferiority =
-      x$pr_equivalence_hd > .9 &
-        x$pr_treatment_benefit < 1 / 3,
-    ld_superiority1 = x$pr_treatment_benefit > .975,
-    ld_superiority2 = x$pr_wr_13 > .90,
-    ld_inferiority = x$pr_treatment_benefit < .025,
-    ld_equivalence = x$pr_equivalence > .9 &
-      x$pr_treatment_benefit > 1 / 3 &
-      x$pr_treatment_benefit < 2 / 3,
-    ld_equivalencesuperiority =
-      x$pr_equivalence > .9 &
-        x$pr_treatment_benefit > 2 / 3,
-    ld_equivalenceinferiority =
-      x$pr_equivalence > .9 &
-        x$pr_treatment_benefit < 1 / 3
-  )
-}
-
-stan_success <- function(fit) {
-  summary_vals <- fit$summary("theta",
-    pr_treatment_benefit = ~ mean(. > 1),
-    pr_wr_15 = ~ mean(. > 1.5),
-    pr_wr_13 = ~ mean(. > 1.3),
-    pr_equivalence = ~ mean(. > 1 / 1.3 & . < 1.3),
-    pr_equivalence_hd = ~ mean(. > .8 & . < 1.25)
-  )
-  out <- hit_success(summary_vals)
-  out$win_ratio <- fit$summary(variables = "theta")$mean
-  out
-}
-subset_trial <- function(n_per_arm = 50, d) {
-  total_subj <- nrow(d)
-  if (n_per_arm * 2 > total_subj) {
-    stop("Cannot subset more than exists")
-  }
-
-  part_1 <- 1:n_per_arm
-  part_2 <- part_1 + total_subj / 2
-  d[c(part_1, part_2), ]
-}
-
-summarize_results <- function(x) {
-  x |>
-    mutate(analysis_amount = as.numeric(analysis_amount)) |>
-    group_by(.sim) |>
-    mutate(across(c(matches("^[lh]d_")), function(x) cumsum(x) > 0L)) |>
-    group_by(analysis_amount) |>
-    summarise(across(-.sim, mean))
-}
-
-bayesian_trial_raw_results <- function(
-  n_per_arm, data_cuts, mod, ..., seed = NULL, alpha = .05,
-  prior_std = 1,
-  freq_outputs = FALSE
-) {
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-
-  all_trial_data <- simulate_trial(n_per_arm = n_per_arm, ...)
-  data_subsets <- purrr::map(data_cuts, subset_trial, d = all_trial_data)
-
-
-  if (freq_outputs) {
-    freq_estimates <- data_subsets |>
-      purrr::map(estimate_dataset) |>
-      purrr::map(function(x) subset(x, term == "days_at_home_t7"))
-    return(freq_estimates)
-  } else {
-    freq_estimates <- data_subsets |>
-      purrr::map(estimate_dataset, alpha = alpha) |>
-      purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
-  }
-
-  trial_output <- purrr::map(freq_estimates, function(x) {
-    fit <- mod$sample(
-      data = make_stan_data(x, prior_std = prior_std),
-      # seed = 123,
-      chains = 1,
-      parallel_chains = 1,
-      refresh = 0,
-      show_messages = FALSE
-    )
-    fit
-    # stan_success(fit)
-  })
-
-  trial_output
-}
-
 make_seeds <- function(n) {
   as.integer(runif(n, min = 1e6, max = 1e7 - 1))
 }
-
-compute_trial_stop <- function(x, prefix = c("hd", "ld")) {
-  prefix <- match.arg(prefix)
-  col_to_check <- paste(prefix, c("superiority1", "superiority2", "inferiority", "equivalence", "equivalencesuperiority", "equivalenceinferiority"), sep = "_")
-
-  all_stops <- sapply(x[, col_to_check], function(y) {
-    x$analysis_amount[which(y)[1]]
-  })
-
-  trial_result <- all_stops[which.min(all_stops)]
-
-
-  if (length(trial_result) != 1) {
-    out <- data.frame(
-      stopping_rule = "No Conclusion",
-      stopping_subjects = max(x$analysis_amount),
-      stopping_win_ratio = tail(x$win_ratio, 1)
-    )
-  } else {
-    win_ratio <- which(unname(trial_result) == x$analysis_amount)
-    win_ratio <- x$win_ratio[win_ratio]
-
-    out <- data.frame(
-      stopping_rule = names(trial_result),
-      stopping_subjects = unname(trial_result),
-      stopping_win_ratio = win_ratio
-    )
-  }
-  out
-}
-
-
-file <- system.file("stanmod", "meta.stan", package = "umdorthotrialplanning")
-dir.create(tools::R_user_dir("umdorthotrialplanning"), recursive = TRUE, showWarnings = F)
-mod <- cmdstan_model(file, dir = tools::R_user_dir("umdorthotrialplanning"))
 ```
 
 ```{r}
@@ -205,12 +58,7 @@ plan(multicore, workers = params$num_workers)
 ```
 
 
-```{r}
-# cm <- cachem::cache_disk(dir = here::here(".cache", "bayesian_trial_raw_results"))
-# bayesian_trial_raw_results <- memoise::memoise(bayesian_trial_raw_results, cache = cm)
-```
-
-## Simulation Overiew
+## Simulation Overview
 
 The simulations look at a trial with 400 total subjects (200/arm). An interim look is taken as soon as 50 subjects are available in each arm, and then repeated every 50 subjects until the full enrollment occurs. 
 
@@ -266,13 +114,17 @@ sim_calcs <- sim_params |>
     .options = furrr_options(seed = TRUE),
     .progress = interactive()
   )
+
 ```
 
 
 ```{r}
 sim_results <- purrr::map(
   sim_calcs,
-  function(x) purrr::map(x, stan_success) |> purrr::list_rbind(names_to = "analysis_amount")
+  function(x) {
+    purrr::map(x, trial_success) |>
+      purrr::list_rbind(names_to = "analysis_amount")
+  }
 ) |> purrr::list_rbind(names_to = ".sim")
 sim_results$analysis_amount <- as.numeric(sim_results$analysis_amount)
 ```
@@ -281,25 +133,34 @@ sim_results$analysis_amount <- as.numeric(sim_results$analysis_amount)
 sim_results |>
   summarize_results() |>
   flextable::flextable()
+
 ```
 
 The following table shows why trials stopped (No Conclusions is used if none of the criteria are met). The average trial size for each conclusion and overall are shown. Only the high differentiation are shown here since this trial has high power.
 
 
 ```{r}
+# all_res_temp <- sim_results |>
+#   split(~.sim) |>
+#   purrr::map(compute_trial_stop, prefix = "hd") |>
+#   purrr::list_rbind() |>
+#   mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0("hd", "_No Conclusion"), stopping_rule)) |>
+#   tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
+
 all_res_temp <- sim_results |>
   split(~.sim) |>
-  purrr::map(compute_trial_stop, prefix = "hd") |>
+  purrr::map(compute_trial_stop) |>
   purrr::list_rbind() |>
-  mutate(stopping_rule = if_else(stopping_rule == "No Conclusion", paste0("hd", "_No Conclusion"), stopping_rule)) |>
-  tidyr::separate(stopping_rule, into = c("group", "rule"), sep = "_")
+  rename(rule = stopping_rule) |>
+  mutate(stopping_subjects = as.numeric(stopping_subjects))
+
 
 dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
   dplyr::mutate(
     rule = factor(rule),
     rule = forcats::fct_relevel(rule, "Overall", after = Inf)
   ) |>
-  group_by(group, rule) |>
+  group_by(rule) |>
   summarise(
     total_stops = n(),
     average_size = mean(stopping_subjects),
@@ -326,7 +187,6 @@ dplyr::bind_rows(all_res_temp, all_res_temp |> mutate(rule = "Overall")) |>
     rule = forcats::fct_relevel(rule, "Overall", after = Inf)
   ) |>
   filter(rule != "Overall") |>
-  group_by(group, rule) |>
   ggplot(aes(color = rule, x = stopping_subjects, stopping_win_ratio)) +
   geom_point(alpha = .5) +
   theme_bw()
@@ -341,7 +201,7 @@ The following diagram shows the flow of when different criteria are hit at each 
 
 alluvial_df <- sim_results |>
   split(~.sim) |>
-  purrr::map(compute_trial_stop, prefix = "hd") |>
+  purrr::map(compute_trial_stop) |>
   purrr::list_rbind(names_to = ".sim") |>
   select(-stopping_win_ratio) |>
   tidyr::expand_grid(all_cuts = data_cuts) |>

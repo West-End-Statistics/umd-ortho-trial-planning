@@ -1,7 +1,7 @@
 Package: umdorthotrialplanning
 Type: Package
 Title: Orthopedic Clinical Trial Planning Using Win Ratio Methodology
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(
     person("Maintainer", "Name", email = "maintainer@example.com", role = c("aut", "cre"))
     )

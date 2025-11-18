@@ -1,8 +1,5 @@
 # Orthopedic Trial Planing
 
-
-
-
 ## Running Interim Analysis
 
 This describes the requirements for re-running the code in "vignettes/interim-analysis.qmd"
@@ -21,7 +18,7 @@ install_cmdstan(cores = 2)
 You can then install the `umdorthotrialplanning` package with the `remotes` package:
 
 ```r
-remotes::install_github("West-End-Statistics/umd-ortho-trial-planning@vitallish/issue10")
+remotes::install_github("West-End-Statistics/umd-ortho-trial-planning", dependencies = TRUE)
 ```
 
 ## Orthopedic Trial Planning Application

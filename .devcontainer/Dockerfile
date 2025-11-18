@@ -29,3 +29,9 @@ USER vscode
 RUN Rscript -e "dir.create(path = Sys.getenv('R_LIBS_USER'), showWarnings = FALSE, recursive = TRUE)"
 # RUN Rscript -e "dir.create(path = Sys.getenv('R_LIBS_USER'), showWarnings = FALSE, recursive = TRUE)"
 RUN   echo ".libPaths(Sys.getenv('R_LIBS_USER'))" >> /home/vscode/.Rprofile
+
+
+# # This always invalides the cache so the 
+# RUN echo $(od -vAn -N2 -tu2 < /dev/urandom)
+# RUN echo $(ls -l /workspaces)
+# RUN Rscript -e "devtools::install('/workspaces/umd-ortho-trial-planning/', quick = TRUE, upgrade = 'never', build_vignettes = FALSE)"
