@@ -38,8 +38,8 @@ Suggests:
     rmarkdown,
     testthat (>= 3.0.0),
     tidyr
-URL: https://github.com/yourusername/umd-ortho-trial-planning
-BugReports: https://github.com/yourusername/umd-ortho-trial-planning/issues
+URL: https://github.com/West-End-Statistics/umd-ortho-trial-planning
+BugReports: https://github.com/West-End-Statistics/umd-ortho-trial-planning/issues
 Roxygen: list(markdown = TRUE)
 Config/testthat/edition: 3
 Config/Needs/website: rmarkdown
