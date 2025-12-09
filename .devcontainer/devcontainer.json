@@ -24,6 +24,12 @@
 			]
 		}
 	},
+	"runArgs": [
+		"--memory=32g",
+		/* limit memory swap and memory to keep ram to 32g */
+		"--memory-swap=32g",
+		"--cgroupns=host"
+	],
 	"features": {
 		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
 	}

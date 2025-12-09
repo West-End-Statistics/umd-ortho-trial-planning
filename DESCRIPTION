@@ -1,9 +1,9 @@
 Package: umdorthotrialplanning
 Type: Package
 Title: Orthopedic Clinical Trial Planning Using Win Ratio Methodology
-Version: 0.1.0
+Version: 0.2.1
 Authors@R: c(
-    person("Maintainer", "Name", email = "maintainer@example.com", role = c("aut", "cre"))
+    person("Vitaly", "Druker", email = "vitaly@westendstats.com", role = c("aut", "cre"))
     )
 Description: Statistical analysis tools for orthopedic clinical trial planning,
     focusing on win ratio methodology and Bayesian analysis. Includes functions
@@ -38,8 +38,8 @@ Suggests:
     rmarkdown,
     testthat (>= 3.0.0),
     tidyr
-URL: https://github.com/yourusername/umd-ortho-trial-planning
-BugReports: https://github.com/yourusername/umd-ortho-trial-planning/issues
+URL: https://github.com/West-End-Statistics/umd-ortho-trial-planning
+BugReports: https://github.com/West-End-Statistics/umd-ortho-trial-planning/issues
 Roxygen: list(markdown = TRUE)
 Config/testthat/edition: 3
 Config/Needs/website: rmarkdown
