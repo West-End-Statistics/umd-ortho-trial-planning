@@ -1,0 +1,120 @@
+---
+title: "Example of Data Analysis"
+date: today
+format: 
+  html:
+    embed-resources: true
+code-fold: true
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+if (interactive()) {
+  devtools::load_all()
+} else {
+  library(umdorthotrialplanning)
+}
+
+library(BuyseTest)
+library(dplyr)
+alpha <- .05
+prior_std <- 1
+
+mod <- create_cmdstan_model()
+```
+
+
+
+```{r}
+data <- readr::read_csv(here::here("data", "mapt-sample-2025-12-03.csv"))
+
+set.seed(202151209)
+
+d <- data |>
+  select(arm = strata, died = death, days_at_home = dah120, amb_status_numeric = amb120) |>
+  mutate(ambulation_status = factor(amb_status_numeric,
+    labels = c(
+      "unable to walk", "walk with human assistance", "walk with aid",
+      "walk without assistance"
+    )
+  ))
+
+# create 10 copies of the data
+d_copied <- lapply(seq_len(10), function(.i) d) |>
+  purrr::list_rbind() |>
+  # randomize the order
+  dplyr::sample_frac(replace = TRUE) |>
+  dplyr::slice_head(n = 500)
+
+data_cuts <- seq(50, 250, by = 25)
+names(data_cuts) <- data_cuts
+data_subsets <- purrr::map(data_cuts, subset_trial, d = d_copied)
+```
+
+
+
+```{r}
+freq_estimates <- data_subsets |>
+  purrr::map(estimate_dataset, alpha = alpha) |>
+  purrr::map(function(x) subset(x, term == "days_at_home_t7", select = c(estimate, std.error)))
+
+trial_output <- purrr::map(freq_estimates, function(x) {
+  fit <- mod$sample(
+    data = make_stan_data(x, prior_std = prior_std),
+    # seed = 123,
+    chains = 1,
+    parallel_chains = 1,
+    refresh = 0,
+    show_messages = FALSE
+  )
+  fit
+  # stan_success(fit)
+})
+```
+
+```{r}
+#' High Differentiation Trial Success Criteria
+#'
+#' Wrapper for trial_success with high differentiation thresholds
+trial_success_hd <- function(fit) {
+  trial_success(
+    fit,
+    pr_superiority_treatment_benefit = 0.99,
+    pr_inferiority_treatment_benefit = 0.01,
+    pr_superiority_clinical_benefit = 0.90,
+    pr_equivalence = 0.90,
+    pr_treat_equiv_bounds = c(1 / 3, 2 / 3),
+    wr_treat_equiv_bounds = c(0.8, 1.25),
+    wr_clinical_benefit = 1.5
+  )
+}
+
+#' Low Differentiation Trial Success Criteria
+#'
+#' Wrapper for trial_success with low differentiation thresholds
+trial_success_ld <- function(fit) {
+  trial_success(
+    fit,
+    pr_superiority_treatment_benefit = 0.975,
+    pr_inferiority_treatment_benefit = 0.025,
+    pr_superiority_clinical_benefit = 0.90,
+    pr_equivalence = 0.90,
+    pr_treat_equiv_bounds = c(1 / 3, 2 / 3),
+    wr_treat_equiv_bounds = c(0.77, 1.3),
+    wr_clinical_benefit = 1.3
+  )
+}
+```
+
+```{r}
+analysis <- purrr::map(trial_output, trial_success_hd) |>
+  purrr::list_rbind(names_to = "analysis_amount")
+
+compute_trial_stop(analysis)
+```
